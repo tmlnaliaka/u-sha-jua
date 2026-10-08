@@ -1,0 +1,12 @@
+project_name: "u-sha-jua-disaster-platform"
+engine: "gemini-3-pro"
+permissions:
+  run_commands: true
+  edit_files: true
+  network_egress: true
+context_rules:
+  ignore_paths:
+    - "node_modules/**"
+    - "venv/**"
+    - ".git/**"
+    - "dist/**"
