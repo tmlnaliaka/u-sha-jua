@@ -80,7 +80,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
           url={
             lowBandwidth
               ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-              : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+              : `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?api_key=${import.meta.env.VITE_CARTO_API_KEY || 'cb1_4ekr_1_985d9ad7f061f7ff08db79c4'}`
           }
           className={lowBandwidth ? 'dark-map-tiles' : ''}
           maxZoom={19}
