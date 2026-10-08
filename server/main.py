@@ -5,6 +5,7 @@ from config import settings
 from database import Base, engine, SessionLocal
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
 from routers import incidents_router, ws_router
+from routers.integrations import router as integrations_router
 import uuid
 from datetime import datetime, timezone
 
@@ -111,6 +112,7 @@ app.add_middleware(
 
 # Mount API Routers
 app.include_router(incidents_router, prefix=settings.API_V1_PREFIX)
+app.include_router(integrations_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws_router)
 
 @app.get("/health", tags=["Health"])

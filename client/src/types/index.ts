@@ -1,6 +1,15 @@
 export type IncidentType = 'Flood' | 'Fire' | 'Collapse';
 export type UrgencyLevel = 'Low' | 'Medium' | 'Critical';
 export type IncidentStatus = 'Pending' | 'Dispatched' | 'Resolved';
+export type VerificationStatus = 'Unverified' | 'Provisional' | 'Confirmed' | 'Rejected';
+
+export interface IncidentEvidence {
+  id: string;
+  filename: string;
+  content_type: string;
+  url: string;
+  created_at: string | null;
+}
 
 export interface Coordinates {
   latitude: number;
@@ -19,6 +28,10 @@ export interface Incident {
   };
   status: IncidentStatus;
   timestamp: string;
+  verification_status: VerificationStatus;
+  verification_note: string | null;
+  ai_assessment: string | null;
+  evidence: IncidentEvidence[];
 }
 
 export interface CivilianReportInput {
@@ -26,6 +39,8 @@ export interface CivilianReportInput {
   sender_phone?: string;
   device_lat?: number;
   device_lon?: number;
+  sms_opt_in?: boolean;
+  files?: File[];
 }
 
 export interface GeoJSONFeature {

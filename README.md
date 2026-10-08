@@ -46,6 +46,9 @@ flowchart TD
 
 - **Civilian Distress Ingestion**: Accepts raw, unstructured distress reports via low-bandwidth SMS or web portals.
 - **Asynchronous AI Distress Extraction**: Extracts incident type (`Flood`, `Fire`, `Collapse`), urgency level (`Critical`, `Medium`, `Low`), and resolves landmark coordinates (Mathare, Kibera, Gikomba, Mukuru, etc.) via Gemini API and a deterministic offline spatial gazetteer.
+- **Evidence Review & Dispatcher Verification**: Reports can include GPS and up to six photo/video files. Gemini can summarize visible signs in photos as provisional support; it does not verify incidents. A dispatcher explicitly confirms or rejects each report, and only confirmed incidents reveal a hazard-specific safety guide.
+- **Mapbox Satellite Context**: An optional Mapbox satellite-streets layer helps orient responders. Satellite tiles are not live imagery and must not be treated as evidence that a reported incident is active.
+- **Africa's Talking SMS**: An optional protected inbound SMS webhook creates incidents from SMS, and opt-in reporters can receive a receipt and status updates. API credentials remain server-side.
 - **Spatial PostGIS Engine**: Native geometry storage (EPSG:4326) and viewport-bounded spatial feeds (`/api/v1/incidents/spatial-feed`).
 - **Live WebSocket Pipeline**: Sub-second push telemetry broadcasting new incidents and status updates to connected emergency operations centers.
 - **High-Density GIS Command Dashboard**:
@@ -98,17 +101,23 @@ flowchart TD
 ```bash
 cd server
 pip install -r requirements.txt
+copy .env.example .env
 python main.py
 ```
 *API documentation available at [http://localhost:8000/docs](http://localhost:8000/docs)*
+
+Set `GEMINI_API_KEY` in `server/.env` for text extraction and provisional photo summaries. Without it, text extraction uses the offline parser and photo evidence remains available for dispatcher review. Set a server-side, API-restricted `GOOGLE_MAPS_API_KEY` to reverse-geocode reporter GPS coordinates; the offline gazetteer remains the fallback. Configure a strong `DISPATCHER_API_TOKEN` to enable incident confirmation; the dispatcher enters this token on first use, and the client keeps it only in memory. To enable SMS, configure the Africa's Talking API key, username, and a newly generated `AFRICASTALKING_WEBHOOK_TOKEN`; configure the SMS callback URL with that token. Enable reporter notifications only when a reporter submits a phone number and checks the SMS consent box.
 
 #### 2. Frontend (React + Vite)
 ```bash
 cd client
 npm install
+copy .env.example .env.local
 npm run dev
 ```
 *Access GIS Command Center at [http://localhost:5173](http://localhost:5173)*
+
+Set `VITE_MAPBOX_ACCESS_TOKEN` in `client/.env.local` to a URL-restricted public Mapbox token to enable the satellite-context layer. The regular map works without it.
 
 ---
 
@@ -125,6 +134,10 @@ docker compose up -d --build
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/api/v1/incidents/report` | Ingests civilian raw distress report, triggers AI geocoding & broadcasts update |
+| `POST` | `/api/v1/incidents/report-with-media` | Multipart report with optional GPS and photo/video evidence |
+| `PATCH` | `/api/v1/incidents/{id}/verification` | Dispatcher confirms or rejects a report |
+| `GET` | `/api/v1/incidents/{id}/evidence/{evidence_id}` | Reads evidence attached to a report |
+| `POST` | `/api/v1/integrations/africastalking/sms?token=...` | Protected Africa's Talking inbound SMS callback |
 | `POST` | `/api/v1/incidents` | Direct manual incident creation |
 | `GET` | `/api/v1/incidents` | Query incidents with filters (`status`, `incident_type`, `urgency_level`) |
 | `GET` | `/api/v1/incidents/spatial-feed` | GeoJSON FeatureCollection bounded by viewport query parameters |

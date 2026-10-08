@@ -27,6 +27,7 @@ wheels/
 htmlcov/
 *.db
 *.sqlite3
+server/evidence/
 
 # Node / React
 node_modules/

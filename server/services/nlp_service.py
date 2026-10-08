@@ -2,6 +2,7 @@ import os
 import re
 import json
 import logging
+import httpx
 from typing import Dict, Any, Tuple
 from config import settings
 from models.incident import IncidentType, UrgencyLevel
@@ -90,13 +91,74 @@ class NLPService:
         2. Seamlessly falls back to calibrated deterministic regex/gazetteer parser.
         3. Honors device GPS coordinates if provided.
         """
+        extraction = None
         if self.gemini_available:
             try:
-                return await self._extract_with_gemini(raw_text, device_lat, device_lon)
+                extraction = await self._extract_with_gemini(raw_text, device_lat, device_lon)
             except Exception as e:
                 logger.warning(f"Gemini API inference failed ({e}), falling back to offline spatial NLP.")
 
-        return self._extract_fallback(raw_text, device_lat, device_lon)
+        if extraction is None:
+            extraction = self._extract_fallback(raw_text, device_lat, device_lon)
+        if device_lat is not None and device_lon is not None:
+            location_name = await self._reverse_geocode(device_lat, device_lon)
+            if location_name:
+                extraction.location_name = location_name
+        return extraction
+
+    async def _reverse_geocode(self, latitude: float, longitude: float) -> str:
+        if not settings.GOOGLE_MAPS_API_KEY:
+            return ""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    "https://maps.googleapis.com/maps/api/geocode/json",
+                    params={
+                        "latlng": f"{latitude},{longitude}",
+                        "key": settings.GOOGLE_MAPS_API_KEY,
+                    },
+                )
+                response.raise_for_status()
+                payload = response.json()
+            if payload.get("status") == "OK" and payload.get("results"):
+                return str(payload["results"][0]["formatted_address"])[:255]
+            if payload.get("status") not in {"ZERO_RESULTS"}:
+                logger.warning("Google Maps reverse geocoding returned status %s", payload.get("status"))
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            logger.warning("Google Maps reverse geocoding failed: %s", exc)
+        return ""
+
+    async def assess_visual_evidence(self, files: list[tuple[str, bytes]]) -> str:
+        """Summarize visible signs in photos; this is never an incident verification."""
+        image_files = [
+            (content_type, content)
+            for content_type, content in files
+            if content_type.startswith("image/")
+        ][:4]
+        if not self.gemini_available or not image_files:
+            return ""
+
+        try:
+            import google.generativeai as genai
+
+            prompt = (
+                "Describe only visible, relevant disaster indicators in these reporter-submitted images "
+                "(for example visible flames, standing water, or structural damage). If no clear sign is "
+                "visible, say so. Do not infer location, time, cause, casualties, or whether an incident is "
+                "currently active. Keep the description under 80 words. This is a provisional aid for a "
+                "human dispatcher, not verification or an emergency instruction."
+            )
+            parts = [prompt]
+            parts.extend(
+                genai.types.Part.from_data(data=content, mime_type=content_type)
+                for content_type, content in image_files
+            )
+            response = await self.gemini_model.generate_content_async(parts)
+            assessment = (response.text or "").strip()
+            return assessment[:1000]
+        except Exception as exc:
+            logger.warning("Gemini visual evidence review failed: %s", exc)
+            return ""
 
     async def _extract_with_gemini(
         self,

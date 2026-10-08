@@ -1,16 +1,35 @@
-import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import React, { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Incident, IncidentStatus } from '../types';
-import { ShieldCheck, Send } from 'lucide-react';
+import { CheckCircle2, Image as ImageIcon, Map as MapIcon, Send, ShieldCheck, Satellite, XCircle } from 'lucide-react';
 
 interface DisasterMapProps {
   incidents: Incident[];
   selectedIncident: Incident | null;
   onSelectIncident: (incident: Incident) => void;
   onUpdateStatus: (id: string, status: IncidentStatus) => void;
+  onUpdateVerification: (id: string, status: 'Confirmed' | 'Rejected') => void;
   lowBandwidth: boolean;
 }
+
+const RESPONSE_PROTOCOLS = {
+  Flood: [
+    'Move to higher ground using a route away from moving water.',
+    'Do not walk, swim, or drive through floodwater; avoid bridges and drainage channels.',
+    'Keep clear of fallen power lines and follow responder instructions.',
+  ],
+  Fire: [
+    'Leave by the nearest safe exit; stay low if smoke is present.',
+    'Do not use lifts or re-enter the building for belongings.',
+    'Warn others only if safe, then follow fire and rescue personnel directions.',
+  ],
+  Collapse: [
+    'Move away from the unstable structure and keep access routes clear.',
+    'Do not enter rubble or move debris; hidden voids and further collapse are dangerous.',
+    'Tell rescuers where people may be trapped and follow their directions.',
+  ],
+} as const;
 
 // Controller to handle programmatic camera flyTo
 const MapController: React.FC<{ selectedIncident: Incident | null }> = ({ selectedIncident }) => {
@@ -59,10 +78,14 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
   selectedIncident,
   onSelectIncident,
   onUpdateStatus,
+  onUpdateVerification,
   lowBandwidth,
 }) => {
+  const [satelliteView, setSatelliteView] = useState(false);
   // Kenya Default Center (Nairobi Metropolitan / Informal Settlement Basin)
   const defaultPosition: [number, number] = [-1.286389, 36.817223];
+  const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+  const useMapbox = satelliteView && Boolean(mapboxToken) && !lowBandwidth;
 
   return (
     <div className="w-full h-full relative overflow-hidden select-none">
@@ -74,14 +97,16 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
       >
         <MapController selectedIncident={selectedIncident} />
 
-        {/* Dynamic Tile Layer (Dark Matter / CartoDB or OpenStreetMap) */}
+        {/* Satellite imagery is geographic context, not a live incident-verification feed. */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url={
-            lowBandwidth
+          attribution={useMapbox
+            ? '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}
+          url={useMapbox
+            ? `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/256/{z}/{x}/{y}?access_token=${mapboxToken}`
+            : lowBandwidth
               ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-              : `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?api_key=${import.meta.env.VITE_CARTO_API_KEY || 'cb1_4ekr_1_985d9ad7f061f7ff08db79c4'}`
-          }
+              : 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png'}
           className={lowBandwidth ? 'dark-map-tiles' : ''}
           maxZoom={19}
         />
@@ -99,8 +124,16 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
                 click: () => onSelectIncident(incident),
               }}
             >
+              <Tooltip direction="top" offset={[0, -12]} opacity={0.98} sticky>
+                <div className="max-w-56 space-y-1">
+                  <strong>{incident.location_name}</strong>
+                  <p>{incident.urgency_level} {incident.incident_type} · {incident.verification_status}</p>
+                  <p>{incident.raw_text}</p>
+                  <small>Community report · {incident.status}</small>
+                </div>
+              </Tooltip>
               <Popup>
-                <div className="p-1 space-y-2 text-slate-100 max-w-xs">
+                <div className="p-1 space-y-2.5 text-slate-100 max-w-sm">
                   {/* Header Badge */}
                   <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
                     <span
@@ -112,12 +145,76 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
                           : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                       }`}
                     >
-                      {incident.urgency_level} • {incident.incident_type}
+                      {incident.urgency_level} · {incident.incident_type}
                     </span>
                     <span className="text-[10px] text-slate-400 font-mono">
                       {incident.status}
                     </span>
                   </div>
+
+                  <div className={`rounded-md px-2 py-1.5 text-[11px] ${
+                    incident.verification_status === 'Confirmed'
+                      ? 'bg-emerald-950/70 text-emerald-300'
+                      : incident.verification_status === 'Rejected'
+                        ? 'bg-slate-800 text-slate-300'
+                        : incident.verification_status === 'Provisional'
+                          ? 'bg-amber-950/70 text-amber-200'
+                          : 'bg-amber-950/50 text-amber-300'
+                  }`}>
+                    <strong>{incident.verification_status === 'Provisional' ? 'AI review · provisional' : incident.verification_status}</strong>
+                    <span className="block mt-0.5">
+                      {incident.verification_status === 'Confirmed'
+                        ? 'Dispatcher-confirmed. Follow local emergency authorities.'
+                        : incident.verification_status === 'Rejected'
+                          ? 'Marked unconfirmed by dispatcher.'
+                          : 'Self-reported and not verified. GPS and satellite imagery are location context only.'}
+                    </span>
+                  </div>
+
+                  {incident.ai_assessment && (
+                    <div className="text-[11px] text-slate-300">
+                      <span className="font-semibold text-amber-200">Evidence review note · not verification</span>
+                      <p className="mt-0.5 leading-relaxed">{incident.ai_assessment}</p>
+                    </div>
+                  )}
+
+                  {incident.evidence.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-semibold text-slate-200 flex items-center gap-1">
+                        <ImageIcon className="w-3 h-3" /> Reporter evidence ({incident.evidence.length})
+                      </p>
+                      <div className="flex gap-2 overflow-x-auto">
+                        {incident.evidence.map((evidence) => {
+                          const url = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${evidence.url}`;
+                          return evidence.content_type.startsWith('image/') ? (
+                            <a key={evidence.id} href={url} target="_blank" rel="noreferrer" title={evidence.filename}>
+                              <img src={url} alt={`Evidence: ${evidence.filename}`} className="h-16 w-20 rounded object-cover border border-white/10" />
+                            </a>
+                          ) : (
+                            <a key={evidence.id} href={url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-300 underline">
+                              View {evidence.filename}
+                            </a>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {incident.verification_status === 'Confirmed' && (
+                    <section className="rounded-md bg-emerald-950/40 p-2">
+                      <h5 className="text-[11px] font-bold text-emerald-200 flex items-center gap-1">
+                        <ShieldCheck className="w-3.5 h-3.5" /> {incident.incident_type} response guide
+                      </h5>
+                      <ol className="mt-1 list-decimal pl-4 space-y-1 text-[10px] text-slate-200">
+                        {RESPONSE_PROTOCOLS[incident.incident_type].map((instruction) => (
+                          <li key={instruction}>{instruction}</li>
+                        ))}
+                      </ol>
+                      <p className="mt-1 text-[10px] text-emerald-200/80">
+                        General safety guidance only; follow instructions from on-scene emergency services.
+                      </p>
+                    </section>
+                  )}
 
                   {/* Location & Raw Text */}
                   <div>
@@ -133,7 +230,23 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
                   </div>
 
                   {/* Quick Dispatch Actions */}
-                  <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-1.5">
+                  <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-1.5">
+                    {incident.verification_status !== 'Confirmed' && incident.verification_status !== 'Rejected' && (
+                      <>
+                        <button
+                          onClick={() => onUpdateVerification(incident.id, 'Confirmed')}
+                          className="flex-1 py-1 px-2 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-medium flex items-center justify-center gap-1"
+                        >
+                          <CheckCircle2 className="w-3 h-3" /> Confirm
+                        </button>
+                        <button
+                          onClick={() => onUpdateVerification(incident.id, 'Rejected')}
+                          className="py-1 px-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-[11px] font-medium flex items-center justify-center gap-1"
+                        >
+                          <XCircle className="w-3 h-3" /> Reject
+                        </button>
+                      </>
+                    )}
                     {incident.status === 'Pending' && (
                       <button
                         onClick={() => onUpdateStatus(incident.id, 'Dispatched')}
@@ -184,6 +297,20 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
             <span className="text-slate-300 text-[11px]">Low (Advisory/Monitored)</span>
           </div>
         </div>
+      </div>
+      <div className="absolute top-4 right-4 z-[1000]">
+        <button
+          type="button"
+          onClick={() => setSatelliteView((current) => !current)}
+          disabled={!mapboxToken || lowBandwidth}
+          aria-pressed={useMapbox}
+          title={!mapboxToken ? 'Set VITE_MAPBOX_ACCESS_TOKEN to enable Mapbox satellite tiles' : 'Satellite imagery is not live incident evidence'}
+          className="flex items-center gap-2 rounded-lg border border-white/15 bg-[#111827]/90 px-3 py-2 text-xs font-medium text-slate-100 shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {useMapbox ? <MapIcon className="h-3.5 w-3.5" /> : <Satellite className="h-3.5 w-3.5" />}
+          {useMapbox ? 'Street map' : 'Satellite context'}
+        </button>
+        {lowBandwidth && <p className="mt-1 text-right text-[10px] text-slate-300">Unavailable in low-bandwidth mode</p>}
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ export const App: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [dispatcherToken, setDispatcherToken] = useState<string>('');
 
   // Play synthetic browser audio alert for critical emergencies
   const playAlertSound = useCallback(() => {
@@ -61,14 +62,14 @@ export const App: React.FC = () => {
     const cleanupWs = api.createWebSocket(
       (event, data) => {
         if (event === 'incident_reported' || event === 'incident_created') {
-          const newInc: Incident = data;
+          const newInc = data as Incident;
           setIncidents((prev) => [newInc, ...prev.filter((i) => i.id !== newInc.id)]);
           showToast(`🚨 NEW ${newInc.urgency_level.toUpperCase()} ${newInc.incident_type.toUpperCase()}: ${newInc.location_name}`);
           if (newInc.urgency_level === 'Critical') {
             playAlertSound();
           }
         } else if (event === 'status_updated') {
-          const updated: Incident = data;
+          const updated = data as Incident;
           setIncidents((prev) =>
             prev.map((inc) => (inc.id === updated.id ? updated : inc))
           );
@@ -76,8 +77,14 @@ export const App: React.FC = () => {
             setSelectedIncident(updated);
           }
           showToast(`Status updated: ${updated.location_name} -> ${updated.status}`);
+        } else if (event === 'verification_updated') {
+          const updated = data as Incident;
+          setIncidents((prev) => prev.map((inc) => (inc.id === updated.id ? updated : inc)));
+          if (selectedIncident?.id === updated.id) setSelectedIncident(updated);
+          showToast(`${updated.verification_status}: ${updated.location_name}`);
         } else if (event === 'incident_deleted') {
-          setIncidents((prev) => prev.filter((i) => i.id !== data.id));
+          const deleted = data as { id: string };
+          setIncidents((prev) => prev.filter((i) => i.id !== deleted.id));
         }
       },
       (connected) => {
@@ -101,6 +108,27 @@ export const App: React.FC = () => {
       }
     } catch (err) {
       console.error('Error updating status', err);
+      showToast('Status update failed. Check the connection and try again.');
+    }
+  };
+
+  const handleUpdateVerification = async (id: string, status: 'Confirmed' | 'Rejected') => {
+    let token = dispatcherToken;
+    if (!token) {
+      const enteredToken = window.prompt('Enter dispatcher verification token');
+      if (!enteredToken) return;
+      token = enteredToken;
+      setDispatcherToken(token);
+    }
+    try {
+      const updated = await api.updateVerification(id, status, token);
+      setIncidents((prev) => prev.map((incident) => (incident.id === id ? updated : incident)));
+      if (selectedIncident?.id === id) setSelectedIncident(updated);
+      showToast(`${status}: ${updated.location_name}`);
+    } catch (err) {
+      setDispatcherToken('');
+      console.error('Error updating incident verification', err);
+      showToast('Verification update failed. Check the connection and try again.');
     }
   };
 
@@ -112,6 +140,7 @@ export const App: React.FC = () => {
       showToast(`Incident ingested: ${created.location_name}`);
     } catch (err) {
       console.error('Error submitting report', err);
+      throw err;
     }
   };
 
@@ -136,20 +165,21 @@ export const App: React.FC = () => {
       <StatCards incidents={incidents} />
 
       {/* Main Split Screen Area: Leaflet Map (Left) + Dispatch Board (Right) */}
-      <main className="flex-1 flex overflow-hidden relative">
+      <main className="flex-1 min-h-0 flex flex-col md:flex-row overflow-auto md:overflow-hidden relative">
         {/* Left Map Viewport */}
-        <div className="flex-1 h-full relative">
+        <div className="h-[42vh] min-h-[260px] md:h-full md:min-h-0 md:flex-1 shrink-0 relative">
           <DisasterMap
             incidents={incidents}
             selectedIncident={selectedIncident}
             onSelectIncident={setSelectedIncident}
             onUpdateStatus={handleUpdateStatus}
+            onUpdateVerification={handleUpdateVerification}
             lowBandwidth={lowBandwidth}
           />
         </div>
 
         {/* Right Tactical Dispatch Board */}
-        <div className="w-full md:w-[420px] lg:w-[480px] h-full shrink-0">
+        <div className="w-full h-[55vh] min-h-[320px] md:w-[420px] lg:w-[480px] md:h-full shrink-0">
           <DispatchBoard
             incidents={incidents}
             selectedIncident={selectedIncident}
