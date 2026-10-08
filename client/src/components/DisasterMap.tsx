@@ -85,7 +85,11 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
   // Kenya Default Center (Nairobi Metropolitan / Informal Settlement Basin)
   const defaultPosition: [number, number] = [-1.286389, 36.817223];
   const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+  const cartoApiKey = import.meta.env.VITE_CARTO_API_KEY;
   const useMapbox = satelliteView && Boolean(mapboxToken) && !lowBandwidth;
+  const cartoTileUrl = `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png${
+    cartoApiKey ? `?api_key=${encodeURIComponent(cartoApiKey)}` : ''
+  }`;
 
   return (
     <div className="w-full h-full relative overflow-hidden select-none">
@@ -106,7 +110,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
             ? `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/256/{z}/{x}/{y}?access_token=${mapboxToken}`
             : lowBandwidth
               ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-              : 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png'}
+              : cartoTileUrl}
           className={lowBandwidth ? 'dark-map-tiles' : ''}
           maxZoom={19}
         />

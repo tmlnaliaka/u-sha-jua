@@ -117,7 +117,7 @@ npm run dev
 ```
 *Access GIS Command Center at [http://localhost:5173](http://localhost:5173)*
 
-Set `VITE_MAPBOX_ACCESS_TOKEN` in `client/.env.local` to a URL-restricted public Mapbox token to enable the satellite-context layer. The regular map works without it.
+Set `VITE_CARTO_API_KEY` in `client/.env.local` to use your CARTO tile key. Browser-exposed map keys should be restricted to the required tile API and allowed origins. Set `VITE_MAPBOX_ACCESS_TOKEN` to a URL-restricted public Mapbox token to enable the satellite-context layer. The regular map works without either key.
 
 ---
 
