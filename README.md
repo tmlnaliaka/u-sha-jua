@@ -117,7 +117,7 @@ npm run dev
 ```
 *Access GIS Command Center at [http://localhost:5173](http://localhost:5173)*
 
-Set `VITE_CARTO_API_KEY` in `client/.env.local` to use your CARTO tile key. Browser-exposed map keys should be restricted to the required tile API and allowed origins. Set `VITE_MAPBOX_ACCESS_TOKEN` to a URL-restricted public Mapbox token to enable the satellite-context layer. The regular map works without either key.
+OpenStreetMap provides the default map. Set `VITE_OPENWEATHER_API_KEY` in `client/.env.local` to enable optional precipitation, cloud, temperature, wind, and pressure overlays. This browser-side tile key is visible to users; restrict it in your OpenWeather account and rotate it if exposed. Set `VITE_MAPBOX_ACCESS_TOKEN` to a URL-restricted public Mapbox token to enable the optional satellite-context base layer. The map works without provider keys.
 
 ---
 

@@ -82,14 +82,12 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
   lowBandwidth,
 }) => {
   const [satelliteView, setSatelliteView] = useState(false);
+  const [weatherLayer, setWeatherLayer] = useState('');
   // Kenya Default Center (Nairobi Metropolitan / Informal Settlement Basin)
   const defaultPosition: [number, number] = [-1.286389, 36.817223];
   const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-  const cartoApiKey = import.meta.env.VITE_CARTO_API_KEY;
+  const openWeatherApiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
   const useMapbox = satelliteView && Boolean(mapboxToken) && !lowBandwidth;
-  const cartoTileUrl = `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png${
-    cartoApiKey ? `?api_key=${encodeURIComponent(cartoApiKey)}` : ''
-  }`;
 
   return (
     <div className="w-full h-full relative overflow-hidden select-none">
@@ -101,19 +99,26 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
       >
         <MapController selectedIncident={selectedIncident} />
 
-        {/* Satellite imagery is geographic context, not a live incident-verification feed. */}
+        {/* OpenStreetMap is the base map; OpenWeather tiles are optional overlays. */}
         <TileLayer
           attribution={useMapbox
             ? '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}
+            : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}
           url={useMapbox
             ? `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/256/{z}/{x}/{y}?access_token=${mapboxToken}`
-            : lowBandwidth
-              ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-              : cartoTileUrl}
+            : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
           className={lowBandwidth ? 'dark-map-tiles' : ''}
           maxZoom={19}
         />
+        {weatherLayer && openWeatherApiKey && !lowBandwidth && (
+          <TileLayer
+            key={weatherLayer}
+            url={`https://tile.openweathermap.org/map/${weatherLayer}/{z}/{x}/{y}.png?appid=${encodeURIComponent(openWeatherApiKey)}`}
+            opacity={0.65}
+            attribution='Weather tiles &copy; <a href="https://openweathermap.org/">OpenWeather</a>'
+            maxZoom={19}
+          />
+        )}
 
         {/* Render Vector Markers */}
         {incidents.map((incident) => {
@@ -302,19 +307,38 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
           </div>
         </div>
       </div>
-      <div className="absolute top-4 right-4 z-[1000]">
+      <div className="absolute top-4 right-4 z-[1000] flex flex-col items-end gap-2">
+        <label className="flex items-center gap-2 rounded-lg border border-white/15 bg-[#111827]/95 px-3 py-2 text-xs text-slate-100 shadow-xl">
+          <span>Weather layer</span>
+          <select
+            aria-label="Weather map layer"
+            value={weatherLayer}
+            onChange={(event) => setWeatherLayer(event.target.value)}
+            disabled={!openWeatherApiKey || lowBandwidth}
+            className="max-w-36 rounded bg-slate-800 px-2 py-1 text-xs text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            title={!openWeatherApiKey ? 'Set VITE_OPENWEATHER_API_KEY to enable weather layers' : undefined}
+          >
+            <option value="">Off</option>
+            <option value="precipitation_new">Precipitation</option>
+            <option value="clouds_new">Clouds</option>
+            <option value="temp_new">Temperature</option>
+            <option value="wind_new">Wind</option>
+            <option value="pressure_new">Pressure</option>
+          </select>
+        </label>
+        {!openWeatherApiKey && <p className="text-right text-[10px] text-slate-200">Configure OpenWeather key to enable layers</p>}
+        {lowBandwidth && <p className="text-right text-[10px] text-slate-200">Weather overlays disabled in low-bandwidth mode</p>}
         <button
           type="button"
           onClick={() => setSatelliteView((current) => !current)}
           disabled={!mapboxToken || lowBandwidth}
           aria-pressed={useMapbox}
           title={!mapboxToken ? 'Set VITE_MAPBOX_ACCESS_TOKEN to enable Mapbox satellite tiles' : 'Satellite imagery is not live incident evidence'}
-          className="flex items-center gap-2 rounded-lg border border-white/15 bg-[#111827]/90 px-3 py-2 text-xs font-medium text-slate-100 shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center gap-2 rounded-lg border border-white/15 bg-[#111827]/95 px-3 py-2 text-xs font-medium text-slate-100 shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
         >
           {useMapbox ? <MapIcon className="h-3.5 w-3.5" /> : <Satellite className="h-3.5 w-3.5" />}
           {useMapbox ? 'Street map' : 'Satellite context'}
         </button>
-        {lowBandwidth && <p className="mt-1 text-right text-[10px] text-slate-300">Unavailable in low-bandwidth mode</p>}
       </div>
     </div>
   );
