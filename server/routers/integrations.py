@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
 from routers.incidents import _create_civilian_report
-from schemas.incident import IncidentReportRaw
 
 logger = logging.getLogger("africastalking_webhook")
 router = APIRouter(prefix="/integrations/africastalking", tags=["Integrations"])
@@ -31,6 +30,8 @@ async def receive_africastalking_sms(
         )
     if not secrets.compare_digest(supplied_token, expected_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook token.")
+
+    from schemas.incident import IncidentReportRaw
 
     report = IncidentReportRaw(raw_text=text, sender_phone=phone_number)
     incident = await _create_civilian_report(report, db, sms_initiated=True)

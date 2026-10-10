@@ -49,10 +49,12 @@ flowchart TD
 - **Evidence Review & Dispatcher Verification**: Reports can include GPS and up to six photo/video files. Gemini can summarize visible signs in photos as provisional support; it does not verify incidents. A dispatcher explicitly confirms or rejects each report, and only confirmed incidents reveal a hazard-specific safety guide.
 - **Mapbox Satellite Context**: An optional Mapbox satellite-streets layer helps orient responders. Satellite tiles are not live imagery and must not be treated as evidence that a reported incident is active.
 - **Africa's Talking SMS**: An optional protected inbound SMS webhook creates incidents from SMS, and opt-in reporters can receive a receipt and status updates. API credentials remain server-side.
+- **Separate survivor and administrator portals**: Survivor accounts can submit reports and view only reports linked to their account. Administrators are provisioned server-side and can review all incidents, confirm reports, and dispatch responders. Public registration can never create an administrator.
+- **Protected sessions and dispatch controls**: Passwords are stored as salted PBKDF2 hashes, short-lived bearer tokens protect the API, and the live dispatch WebSocket requires an administrator session.
 - **Spatial PostGIS Engine**: Native geometry storage (EPSG:4326) and viewport-bounded spatial feeds (`/api/v1/incidents/spatial-feed`).
 - **Live WebSocket Pipeline**: Sub-second push telemetry broadcasting new incidents and status updates to connected emergency operations centers.
 - **High-Density GIS Command Dashboard**:
-  - OpenStreetMap & Dark Carto tile layers.
+  - OpenStreetMap basemap with optional OpenWeather overlays.
   - Urgency-pulsing vector marker clusters (Red Pulsing for Critical rescue traps, Amber for Medium escalating risk, Green for Low/Advisory).
   - Tactical split-screen layout with synchronized vector layers and real-time status controls (`Pending` ➔ `Dispatched` ➔ `Resolved`).
   - Constrained-bandwidth toggle mode for throttled field connectivity.
@@ -106,7 +108,9 @@ python main.py
 ```
 *API documentation available at [http://localhost:8000/docs](http://localhost:8000/docs)*
 
-Set `GEMINI_API_KEY` in `server/.env` for text extraction and provisional photo summaries. Without it, text extraction uses the offline parser and photo evidence remains available for dispatcher review. Set a server-side, API-restricted `GOOGLE_MAPS_API_KEY` to reverse-geocode reporter GPS coordinates; the offline gazetteer remains the fallback. Configure a strong `DISPATCHER_API_TOKEN` to enable incident confirmation; the dispatcher enters this token on first use, and the client keeps it only in memory. To enable SMS, configure the Africa's Talking API key, username, and a newly generated `AFRICASTALKING_WEBHOOK_TOKEN`; configure the SMS callback URL with that token. Enable reporter notifications only when a reporter submits a phone number and checks the SMS consent box.
+Set `AUTH_SECRET_KEY` to a newly generated random value of at least 32 characters before starting the server. For example, generate one with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Set a unique `ADMIN_EMAIL` and `ADMIN_PASSWORD` (at least 12 characters); the server provisions that administrator account at startup if it does not already exist. Keep these values in the untracked `server/.env`, never in source control. Survivor self-registration is available in the app; selecting the administrator portal only permits sign-in to the server-provisioned administrator account. Authentication tables are created automatically; existing incident tables are not rewritten.
+
+Set `GEMINI_API_KEY` in `server/.env` for text extraction and provisional photo summaries. Without it, text extraction uses the offline parser and photo evidence remains available for dispatcher review. Set a server-side, API-restricted `GOOGLE_MAPS_API_KEY` to reverse-geocode reporter GPS coordinates; the offline gazetteer remains the fallback. To enable SMS, configure the Africa's Talking API key, username, and a newly generated `AFRICASTALKING_WEBHOOK_TOKEN`; configure the SMS callback URL with that token. Enable reporter notifications only when a reporter submits a phone number and checks the SMS consent box. Set `CORS_ORIGINS` to the exact frontend origins used by your deployment.
 
 #### 2. Frontend (React + Vite)
 ```bash
@@ -123,6 +127,8 @@ OpenStreetMap provides the default map. Set `VITE_OPENWEATHER_API_KEY` in `clien
 
 ### Option B: Docker Compose (Full Stack with PostGIS)
 
+Create a root `.env` file (it is git-ignored) with a generated `AUTH_SECRET_KEY`, `ADMIN_EMAIL`, and unique `ADMIN_PASSWORD` of at least 12 characters before starting the stack. Compose passes these authentication settings to the API; without them, sign-in and registration remain unavailable.
+
 ```bash
 docker compose up -d --build
 ```
@@ -133,16 +139,19 @@ docker compose up -d --build
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/v1/incidents/report` | Ingests civilian raw distress report, triggers AI geocoding & broadcasts update |
+| `POST` | `/api/v1/auth/register` | Creates a survivor account; administrator roles cannot be self-assigned |
+| `POST` | `/api/v1/auth/login` | Authenticates a survivor or provisioned administrator |
+| `GET` | `/api/v1/auth/me` | Returns the current authenticated account |
+| `POST` | `/api/v1/incidents/report` | Accepts a public or authenticated civilian report; signed-in survivor reports are account-linked |
 | `POST` | `/api/v1/incidents/report-with-media` | Multipart report with optional GPS and photo/video evidence |
-| `PATCH` | `/api/v1/incidents/{id}/verification` | Dispatcher confirms or rejects a report |
-| `GET` | `/api/v1/incidents/{id}/evidence/{evidence_id}` | Reads evidence attached to a report |
+| `PATCH` | `/api/v1/incidents/{id}/verification` | Administrator-only confirmation or rejection |
+| `GET` | `/api/v1/incidents/{id}/evidence/{evidence_id}` | Reads evidence for administrators or the owning survivor |
 | `POST` | `/api/v1/integrations/africastalking/sms?token=...` | Protected Africa's Talking inbound SMS callback |
-| `POST` | `/api/v1/incidents` | Direct manual incident creation |
-| `GET` | `/api/v1/incidents` | Query incidents with filters (`status`, `incident_type`, `urgency_level`) |
-| `GET` | `/api/v1/incidents/spatial-feed` | GeoJSON FeatureCollection bounded by viewport query parameters |
-| `PATCH` | `/api/v1/incidents/{id}/status` | Updates triage state (`Pending`, `Dispatched`, `Resolved`) |
-| `WS` | `/ws/live-incidents` | Real-time WebSocket event stream |
+| `POST` | `/api/v1/incidents` | Administrator-only manual incident creation |
+| `GET` | `/api/v1/incidents` | Administrators query all incidents; survivors see only their own |
+| `GET` | `/api/v1/incidents/spatial-feed` | Authenticated GeoJSON; survivor results are account-scoped |
+| `PATCH` | `/api/v1/incidents/{id}/status` | Administrator-only triage updates (`Pending`, `Dispatched`, `Resolved`) |
+| `WS` | `/ws/live-incidents` | Administrator-only real-time WebSocket event stream |
 | `GET` | `/health` | System health check |
 
 ---

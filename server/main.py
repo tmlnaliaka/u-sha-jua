@@ -5,7 +5,9 @@ from config import settings
 from database import Base, engine, SessionLocal
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
 from routers import incidents_router, ws_router
+from routers.auth import router as auth_router
 from routers.integrations import router as integrations_router
+from services.auth_service import bootstrap_admin
 import uuid
 from datetime import datetime, timezone
 
@@ -93,6 +95,7 @@ async def lifespan(app: FastAPI):
     # Initialize DB tables
     Base.metadata.create_all(bind=engine)
     seed_initial_incidents()
+    bootstrap_admin()
     yield
 
 app = FastAPI(
@@ -112,6 +115,7 @@ app.add_middleware(
 
 # Mount API Routers
 app.include_router(incidents_router, prefix=settings.API_V1_PREFIX)
+app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(integrations_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws_router)
 

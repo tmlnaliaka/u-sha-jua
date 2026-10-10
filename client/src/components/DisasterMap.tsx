@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Incident, IncidentStatus } from '../types';
+import { api } from '../services/api';
 import { CheckCircle2, Image as ImageIcon, Map as MapIcon, Send, ShieldCheck, Satellite, XCircle } from 'lucide-react';
 
 interface DisasterMapProps {
@@ -71,6 +72,38 @@ const createCustomMarker = (urgency: string) => {
     iconAnchor: [12, 12],
     popupAnchor: [0, -12],
   });
+};
+
+const SecureEvidenceLink: React.FC<{ evidence: Incident['evidence'][number] }> = ({ evidence }) => {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+    api.getEvidence(evidence.url)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        if (active) setUrl(objectUrl);
+        else URL.revokeObjectURL(objectUrl);
+      })
+      .catch(() => { if (active) setFailed(true); });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [evidence.url]);
+
+  if (failed) return <span className="text-[10px] text-slate-400">Evidence unavailable</span>;
+  if (!url) return <span className="text-[10px] text-slate-400">Loading evidence…</span>;
+  if (evidence.content_type.startsWith('image/')) {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" title={evidence.filename}>
+        <img src={url} alt={`Evidence: ${evidence.filename}`} className="h-16 w-20 rounded border border-white/10 object-cover" />
+      </a>
+    );
+  }
+  return <a href={url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-300 underline">View {evidence.filename}</a>;
 };
 
 export const DisasterMap: React.FC<DisasterMapProps> = ({
@@ -193,18 +226,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
                         <ImageIcon className="w-3 h-3" /> Reporter evidence ({incident.evidence.length})
                       </p>
                       <div className="flex gap-2 overflow-x-auto">
-                        {incident.evidence.map((evidence) => {
-                          const url = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${evidence.url}`;
-                          return evidence.content_type.startsWith('image/') ? (
-                            <a key={evidence.id} href={url} target="_blank" rel="noreferrer" title={evidence.filename}>
-                              <img src={url} alt={`Evidence: ${evidence.filename}`} className="h-16 w-20 rounded object-cover border border-white/10" />
-                            </a>
-                          ) : (
-                            <a key={evidence.id} href={url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-300 underline">
-                              View {evidence.filename}
-                            </a>
-                          );
-                        })}
+                        {incident.evidence.map((evidence) => <SecureEvidenceLink key={evidence.id} evidence={evidence} />)}
                       </div>
                     </div>
                   )}

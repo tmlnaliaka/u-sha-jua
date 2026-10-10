@@ -6,6 +6,7 @@ interface ReportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (report: CivilianReportInput) => Promise<void>;
+  defaultPhone?: string;
 }
 
 const PRESET_TEMPLATES = [
@@ -27,9 +28,9 @@ const PRESET_TEMPLATES = [
   }
 ];
 
-export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit }) => {
+export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSubmit, defaultPhone = '' }) => {
   const [rawText, setRawText] = useState('');
-  const [senderPhone, setSenderPhone] = useState('');
+  const [senderPhone, setSenderPhone] = useState(defaultPhone);
   const [smsOptIn, setSmsOptIn] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [useGps, setUseGps] = useState(false);
@@ -74,7 +75,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSub
         files,
       });
       setRawText('');
-      setSenderPhone('');
+      setSenderPhone(defaultPhone);
       setSmsOptIn(false);
       setFiles([]);
       setUseGps(false);

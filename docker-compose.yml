@@ -26,6 +26,12 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:securepassword@db:5432/ushajua_db
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-}
+      AUTH_ACCESS_TOKEN_MINUTES: ${AUTH_ACCESS_TOKEN_MINUTES:-60}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_NAME: ${ADMIN_NAME:-Emergency Operations Administrator}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       HOST: 0.0.0.0
       PORT: 8000
     ports:

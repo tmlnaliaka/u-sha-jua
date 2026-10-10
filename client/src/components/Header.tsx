@@ -1,5 +1,5 @@
 import React from 'react';
-import { Radio, Wifi, WifiOff, AlertTriangle, Plus, Volume2, VolumeX, ShieldAlert } from 'lucide-react';
+import { Radio, Wifi, WifiOff, AlertTriangle, Plus, Volume2, VolumeX, ShieldAlert, LogOut } from 'lucide-react';
 
 interface HeaderProps {
   connected: boolean;
@@ -9,6 +9,8 @@ interface HeaderProps {
   soundEnabled: boolean;
   onToggleSound: () => void;
   criticalCount: number;
+  userName: string;
+  onSignOut: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -19,6 +21,8 @@ export const Header: React.FC<HeaderProps> = ({
   soundEnabled,
   onToggleSound,
   criticalCount,
+  userName,
+  onSignOut,
 }) => {
   return (
     <header className="min-h-16 bg-[#0E1522] border-b border-white/10 px-3 md:px-6 py-2 flex flex-wrap items-center justify-between gap-2 select-none">
@@ -45,6 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Critical Status Bar & Controls */}
       <div className="flex flex-wrap items-center justify-end gap-2 md:space-x-3">
+        <span className="hidden max-w-40 truncate text-xs text-slate-300 lg:inline">{userName}</span>
         {criticalCount > 0 && (
           <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-red-950/60 border border-red-500/50 text-red-400 animate-pulse text-xs font-semibold">
             <AlertTriangle className="w-4 h-4 text-red-400" />
@@ -98,6 +103,14 @@ export const Header: React.FC<HeaderProps> = ({
           <Plus className="w-4 h-4" />
           <span className="sm:hidden">Report</span>
           <span className="hidden sm:inline">SUBMIT REPORT</span>
+        </button>
+        <button
+          onClick={onSignOut}
+          className="min-h-11 min-w-11 rounded-lg border border-white/10 bg-slate-800/80 p-2 text-slate-300 transition hover:bg-slate-800 hover:text-white"
+          title="Sign out"
+          aria-label="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
         </button>
       </div>
     </header>

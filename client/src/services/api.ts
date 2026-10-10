@@ -1,7 +1,34 @@
-import { Incident, CivilianReportInput, GeoJSONFeatureCollection, IncidentStatus } from '../types';
+import {
+  AuthResponse,
+  AuthUser,
+  Incident,
+  CivilianReportInput,
+  GeoJSONFeatureCollection,
+  IncidentStatus,
+  SignInInput,
+  SignUpInput,
+} from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+const AUTH_STORAGE_KEY = 'ushajua.access_token';
+let accessToken: string | null = sessionStorage.getItem(AUTH_STORAGE_KEY);
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+  if (token) sessionStorage.setItem(AUTH_STORAGE_KEY, token);
+  else sessionStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+export function hasAccessToken(): boolean {
+  return accessToken !== null;
+}
+
+function authHeaders(headers: HeadersInit = {}): Headers {
+  const result = new Headers(headers);
+  if (accessToken) result.set('Authorization', `Bearer ${accessToken}`);
+  return result;
+}
 
 async function responseError(response: Response, fallback: string): Promise<string> {
   try {
@@ -14,8 +41,34 @@ async function responseError(response: Response, fallback: string): Promise<stri
 }
 
 export const api = {
+  async signIn(input: SignInInput): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error(await responseError(res, 'Could not sign in.'));
+    return res.json();
+  },
+
+  async signUp(input: SignUpInput): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error(await responseError(res, 'Could not create your account.'));
+    return res.json();
+  },
+
+  async getCurrentUser(): Promise<AuthUser> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/me`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(await responseError(res, 'Your session has expired. Sign in again.'));
+    return res.json();
+  },
+
   async getIncidents(): Promise<Incident[]> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents`);
+    const res = await fetch(`${API_BASE}/api/v1/incidents`, { headers: authHeaders() });
     if (!res.ok) throw new Error('Failed to fetch incidents');
     return res.json();
   },
@@ -36,7 +89,7 @@ export const api = {
       });
       url += `?${params.toString()}`;
     }
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: authHeaders() });
     if (!res.ok) throw new Error('Failed to fetch spatial feed');
     return res.json();
   },
@@ -53,6 +106,7 @@ export const api = {
 
       const res = await fetch(`${API_BASE}/api/v1/incidents/report-with-media`, {
         method: 'POST',
+        headers: authHeaders(),
         body: form,
       });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to submit report with evidence'));
@@ -61,7 +115,7 @@ export const api = {
 
     const res = await fetch(`${API_BASE}/api/v1/incidents/report`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ ...report, files: undefined }),
     });
     if (!res.ok) throw new Error(await responseError(res, 'Failed to submit report'));
@@ -71,17 +125,17 @@ export const api = {
   async updateStatus(id: string, status: IncidentStatus): Promise<Incident> {
     const res = await fetch(`${API_BASE}/api/v1/incidents/${id}/status`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ status }),
     });
     if (!res.ok) throw new Error(await responseError(res, 'Failed to update status'));
     return res.json();
   },
 
-  async updateVerification(id: string, verificationStatus: 'Confirmed' | 'Rejected', dispatcherToken: string): Promise<Incident> {
+  async updateVerification(id: string, verificationStatus: 'Confirmed' | 'Rejected'): Promise<Incident> {
     const res = await fetch(`${API_BASE}/api/v1/incidents/${id}/verification`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'X-Dispatcher-Token': dispatcherToken },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ status: verificationStatus }),
     });
     if (!res.ok) throw new Error(await responseError(res, 'Failed to update verification'));
@@ -92,7 +146,17 @@ export const api = {
     return `${API_BASE}/api/v1/incidents/${incidentId}/evidence/${evidenceId}`;
   },
 
-  createWebSocket(onMessage: (event: string, data: unknown) => void, onStatusChange?: (connected: boolean) => void) {
+  async getEvidence(path: string): Promise<Blob> {
+    const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(await responseError(res, 'Could not load report evidence.'));
+    return res.blob();
+  },
+
+  createWebSocket(
+    onMessage: (event: string, data: unknown) => void,
+    onStatusChange?: (connected: boolean) => void,
+    onUnauthorized?: () => void,
+  ) {
     let socket: WebSocket | null = null;
     let reconnectTimeout: any = null;
 
@@ -101,13 +165,15 @@ export const api = {
         socket = new WebSocket(`${WS_BASE}/ws/live-incidents`);
 
         socket.onopen = () => {
-          if (onStatusChange) onStatusChange(true);
+          if (accessToken) socket?.send(JSON.stringify({ type: 'auth', token: accessToken }));
+          else socket?.close();
         };
 
         socket.onmessage = (e) => {
           try {
             const parsed = JSON.parse(e.data);
             if (parsed.event) {
+              if (parsed.event === 'connection_established' && onStatusChange) onStatusChange(true);
               onMessage(parsed.event, parsed.data);
             }
           } catch (err) {
@@ -115,9 +181,14 @@ export const api = {
           }
         };
 
-        socket.onclose = () => {
+        socket.onclose = (event) => {
           if (onStatusChange) onStatusChange(false);
-          reconnectTimeout = setTimeout(connect, 3000);
+          if (event.code === 4401 || event.code === 4403) {
+            setAccessToken(null);
+            onUnauthorized?.();
+          } else if (accessToken) {
+            reconnectTimeout = setTimeout(connect, 3000);
+          }
         };
 
         socket.onerror = () => {
@@ -125,7 +196,7 @@ export const api = {
         };
       } catch (e) {
         if (onStatusChange) onStatusChange(false);
-        reconnectTimeout = setTimeout(connect, 3000);
+        if (accessToken) reconnectTimeout = setTimeout(connect, 3000);
       }
     };
 

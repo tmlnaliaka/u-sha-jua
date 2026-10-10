@@ -1,16 +1,15 @@
 import uuid
 import logging
-import secrets
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 import httpx
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
-from config import settings
 from database import get_db
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus, IncidentEvidence, IncidentReview, IncidentReporter
+from models.user import IncidentOwnership, User
 from schemas.incident import (
     IncidentReportRaw,
     IncidentCreate,
@@ -20,6 +19,7 @@ from schemas.incident import (
     IncidentVerificationUpdate,
 )
 from services.nlp_service import nlp_service
+from services.auth_dependencies import get_current_user, get_optional_user, require_admin
 from services.evidence_service import evidence_path, persist_evidence, read_evidence, remove_evidence
 from services.sms_service import send_sms
 from services.websocket_manager import ws_manager
@@ -39,6 +39,7 @@ async def _create_civilian_report(
     db: Session,
     uploaded_files: Optional[list[tuple[str, str, bytes]]] = None,
     sms_initiated: bool = False,
+    current_user: Optional[User] = None,
 ):
     extraction = await nlp_service.extract_distress_report(
         raw_text=report.raw_text,
@@ -69,6 +70,8 @@ async def _create_civilian_report(
     )
 
     db.add(incident)
+    if current_user:
+        db.add(IncidentOwnership(incident_id=incident.id, user_id=current_user.id))
     if evidence_note:
         incident.review = IncidentReview(
             verification_status="Provisional" if ai_assessment and has_photo else "Unverified",
@@ -119,10 +122,11 @@ async def _create_civilian_report(
 @router.post("/report", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
 async def report_civilian_incident(
     report: IncidentReportRaw,
+    current_user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
     """Ingest a civilian report submitted as JSON or SMS-compatible text."""
-    return await _create_civilian_report(report, db)
+    return await _create_civilian_report(report, db, current_user=current_user)
 
 
 @router.post("/report-with-media", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
@@ -133,6 +137,7 @@ async def report_civilian_incident_with_media(
     device_lat: Optional[float] = Form(None, ge=-90.0, le=90.0),
     device_lon: Optional[float] = Form(None, ge=-180.0, le=180.0),
     files: List[UploadFile] = File(default=[]),
+    current_user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     if len(files) > 6:
@@ -145,11 +150,12 @@ async def report_civilian_incident_with_media(
         device_lat=device_lat,
         device_lon=device_lon,
     )
-    return await _create_civilian_report(report, db, uploaded_files)
+    return await _create_civilian_report(report, db, uploaded_files, current_user=current_user)
 
 @router.post("", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
 async def create_incident(
     incident_in: IncidentCreate,
+    _: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """Manual direct dispatch creation endpoint."""
@@ -175,6 +181,7 @@ def get_incidents(
     incident_type: Optional[IncidentType] = None,
     urgency_level: Optional[UrgencyLevel] = None,
     status_filter: Optional[IncidentStatus] = Query(None, alias="status"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Retrieves list of active/historical incidents with filtering."""
@@ -182,6 +189,10 @@ def get_incidents(
         selectinload(Incident.review),
         selectinload(Incident.evidence),
     )
+    if current_user.role != "admin":
+        query = query.join(IncidentOwnership, IncidentOwnership.incident_id == Incident.id).filter(
+            IncidentOwnership.user_id == current_user.id
+        )
     if incident_type:
         query = query.filter(Incident.incident_type == incident_type)
     if urgency_level:
@@ -200,6 +211,7 @@ def get_spatial_feed(
     min_lon: Optional[float] = Query(None, ge=-180.0, le=180.0),
     max_lon: Optional[float] = Query(None, ge=-180.0, le=180.0),
     status_filter: Optional[IncidentStatus] = Query(None, alias="status"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -207,6 +219,10 @@ def get_spatial_feed(
     Optimized for vector map rendering in Leaflet / Mapbox.
     """
     query = db.query(Incident)
+    if current_user.role != "admin":
+        query = query.join(IncidentOwnership, IncidentOwnership.incident_id == Incident.id).filter(
+            IncidentOwnership.user_id == current_user.id
+        )
 
     if min_lat is not None:
         query = query.filter(Incident.latitude >= min_lat)
@@ -228,7 +244,11 @@ def get_spatial_feed(
     }
 
 @router.get("/{incident_id}", response_model=IncidentResponse)
-def get_incident(incident_id: str, db: Session = Depends(get_db)):
+def get_incident(
+    incident_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     incident = db.query(Incident).options(
         selectinload(Incident.review),
         selectinload(Incident.evidence),
@@ -236,13 +256,27 @@ def get_incident(incident_id: str, db: Session = Depends(get_db)):
     ).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
+    _ensure_incident_access(db, incident_id, current_user)
     return incident.to_dict()
+
+
+def _ensure_incident_access(db: Session, incident_id: str, user: User) -> None:
+    if user.role == "admin":
+        return
+    owns_incident = db.query(IncidentOwnership.incident_id).filter(
+        IncidentOwnership.incident_id == incident_id,
+        IncidentOwnership.user_id == user.id,
+    ).first()
+    if not owns_incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
 
 @router.patch("/{incident_id}/status", response_model=IncidentResponse)
 async def update_incident_status(
     incident_id: str,
     update: IncidentStatusUpdate,
-    db: Session = Depends(get_db)
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
 ):
     """Updates operational triage status (Pending -> Dispatched -> Resolved)."""
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
@@ -269,18 +303,9 @@ async def update_incident_status(
 async def update_incident_verification(
     incident_id: str,
     update: IncidentVerificationUpdate,
-    dispatcher_token: Optional[str] = Header(None, alias="X-Dispatcher-Token"),
+    _: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    expected_token = settings.DISPATCHER_API_TOKEN
-    if not expected_token:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Dispatcher verification is not configured.",
-        )
-    if not secrets.compare_digest(dispatcher_token or "", expected_token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Dispatcher authorization required.")
-
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -299,8 +324,10 @@ async def update_incident_verification(
 def get_incident_evidence(
     incident_id: str,
     evidence_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _ensure_incident_access(db, incident_id, current_user)
     evidence = db.query(IncidentEvidence).filter(
         IncidentEvidence.id == evidence_id,
         IncidentEvidence.incident_id == incident_id,
@@ -321,7 +348,11 @@ def get_incident_evidence(
     )
 
 @router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_incident(incident_id: str, db: Session = Depends(get_db)):
+async def delete_incident(
+    incident_id: str,
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")

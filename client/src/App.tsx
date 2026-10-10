@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Incident, CivilianReportInput, IncidentStatus } from './types';
+import { Incident, CivilianReportInput, IncidentStatus, AuthResponse, AuthUser, UserRole } from './types';
 import { api } from './services/api';
+import { hasAccessToken, setAccessToken } from './services/api';
+import { AuthScreen } from './components/AuthScreen';
+import { SurvivorPortal } from './components/SurvivorPortal';
 import { Header } from './components/Header';
 import { StatCards } from './components/StatCards';
 import { DisasterMap } from './components/DisasterMap';
@@ -15,7 +18,10 @@ export const App: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [dispatcherToken, setDispatcherToken] = useState<string>('');
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [incidentsLoading, setIncidentsLoading] = useState(false);
+  const [incidentError, setIncidentError] = useState<string | null>(null);
 
   // Play synthetic browser audio alert for critical emergencies
   const playAlertSound = useCallback(() => {
@@ -45,18 +51,51 @@ export const App: React.FC = () => {
     }, 4000);
   };
 
-  // Load initial incidents from backend
-  const loadIncidents = async () => {
+  useEffect(() => {
+    let active = true;
+    if (!hasAccessToken()) {
+      setAuthLoading(false);
+      return () => { active = false; };
+    }
+    api.getCurrentUser()
+      .then((user) => { if (active) setCurrentUser(user); })
+      .catch(() => { if (active) setAccessToken(null); })
+      .finally(() => { if (active) setAuthLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const loadIncidents = useCallback(async () => {
+    setIncidentsLoading(true);
+    setIncidentError(null);
     try {
       const data = await api.getIncidents();
       setIncidents(data);
     } catch (err) {
       console.error('Failed to load incidents', err);
+      setIncidentError(err instanceof Error ? err.message : 'Could not load your reports.');
+    } finally {
+      setIncidentsLoading(false);
     }
-  };
+  }, []);
+
+  const handleSignOut = useCallback(() => {
+    setAccessToken(null);
+    setCurrentUser(null);
+    setIncidents([]);
+    setSelectedIncident(null);
+    setWsConnected(false);
+  }, []);
 
   useEffect(() => {
+    if (!currentUser) return;
     loadIncidents();
+  }, [currentUser, loadIncidents]);
+
+  useEffect(() => {
+    if (currentUser?.role !== 'admin') {
+      setWsConnected(false);
+      return;
+    }
 
     // Subscribe to real-time WebSocket events
     const cleanupWs = api.createWebSocket(
@@ -89,13 +128,39 @@ export const App: React.FC = () => {
       },
       (connected) => {
         setWsConnected(connected);
-      }
+      },
+      handleSignOut,
     );
 
     return () => {
       cleanupWs();
     };
-  }, [playAlertSound, selectedIncident]);
+  }, [currentUser?.role, handleSignOut, playAlertSound, selectedIncident]);
+
+  const handleAuthenticate = (response: AuthResponse, _portal: UserRole) => {
+    setAccessToken(response.access_token);
+    setCurrentUser(response.user);
+    setIncidents([]);
+    setIncidentError(null);
+  };
+
+  const handleAuthSubmit = (values: {
+    mode: 'login' | 'register';
+    email: string;
+    password: string;
+    display_name?: string;
+    phone_number?: string;
+  }) => {
+    if (values.mode === 'register') {
+      return api.signUp({
+        email: values.email,
+        password: values.password,
+        display_name: values.display_name ?? '',
+        phone_number: values.phone_number,
+      });
+    }
+    return api.signIn({ email: values.email, password: values.password });
+  };
 
   const handleUpdateStatus = async (id: string, status: IncidentStatus) => {
     try {
@@ -113,20 +178,12 @@ export const App: React.FC = () => {
   };
 
   const handleUpdateVerification = async (id: string, status: 'Confirmed' | 'Rejected') => {
-    let token = dispatcherToken;
-    if (!token) {
-      const enteredToken = window.prompt('Enter dispatcher verification token');
-      if (!enteredToken) return;
-      token = enteredToken;
-      setDispatcherToken(token);
-    }
     try {
-      const updated = await api.updateVerification(id, status, token);
+      const updated = await api.updateVerification(id, status);
       setIncidents((prev) => prev.map((incident) => (incident.id === id ? updated : incident)));
       if (selectedIncident?.id === id) setSelectedIncident(updated);
       showToast(`${status}: ${updated.location_name}`);
     } catch (err) {
-      setDispatcherToken('');
       console.error('Error updating incident verification', err);
       showToast('Verification update failed. Check the connection and try again.');
     }
@@ -148,6 +205,28 @@ export const App: React.FC = () => {
     (i) => i.urgency_level === 'Critical' && i.status !== 'Resolved'
   ).length;
 
+  if (authLoading) {
+    return <main className="flex min-h-screen items-center justify-center bg-[#0B0F17] text-sm text-slate-300">Checking your secure session…</main>;
+  }
+
+  if (!currentUser) {
+    return <AuthScreen onAuthenticate={handleAuthenticate} onSubmit={handleAuthSubmit} />;
+  }
+
+  if (currentUser.role === 'survivor') {
+    return (
+      <SurvivorPortal
+        user={currentUser}
+        incidents={incidents}
+        loading={incidentsLoading}
+        error={incidentError}
+        onRefresh={loadIncidents}
+        onSignOut={handleSignOut}
+        onSubmitReport={handleSubmitReport}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen w-screen bg-[#0B0F17] text-slate-100 overflow-hidden font-sans">
       {/* Top Telemetry Header */}
@@ -159,6 +238,8 @@ export const App: React.FC = () => {
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled(!soundEnabled)}
         criticalCount={criticalCount}
+        userName={currentUser.display_name}
+        onSignOut={handleSignOut}
       />
 
       {/* High-Density Statistical Emergency Metric Cards */}

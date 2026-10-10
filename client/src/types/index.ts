@@ -2,6 +2,31 @@ export type IncidentType = 'Flood' | 'Fire' | 'Collapse';
 export type UrgencyLevel = 'Low' | 'Medium' | 'Critical';
 export type IncidentStatus = 'Pending' | 'Dispatched' | 'Resolved';
 export type VerificationStatus = 'Unverified' | 'Provisional' | 'Confirmed' | 'Rejected';
+export type UserRole = 'admin' | 'survivor';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  display_name: string;
+  role: UserRole;
+  phone_number: string | null;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: 'bearer';
+  user: AuthUser;
+}
+
+export interface SignInInput {
+  email: string;
+  password: string;
+}
+
+export interface SignUpInput extends SignInInput {
+  display_name: string;
+  phone_number?: string;
+}
 
 export interface IncidentEvidence {
   id: string;
