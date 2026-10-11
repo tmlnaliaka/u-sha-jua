@@ -5,7 +5,14 @@ from fastapi.middleware.gzip import GZipMiddleware
 from config import settings
 from database import Base, engine, SessionLocal
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
-from routers import incidents_router, ws_router, sms_router, responders_router
+from routers import (
+    incidents_router,
+    ws_router,
+    sms_router,
+    responders_router,
+    weather_router,
+    analytics_router
+)
 from routers.responders import seed_responder_fleet
 from services.spatial_index import spatial_grid, spatial_cache
 from services.websocket_manager import ws_manager
@@ -131,6 +138,8 @@ app.add_middleware(
 app.include_router(incidents_router, prefix=settings.API_V1_PREFIX)
 app.include_router(sms_router, prefix=settings.API_V1_PREFIX)
 app.include_router(responders_router, prefix=settings.API_V1_PREFIX)
+app.include_router(weather_router, prefix=settings.API_V1_PREFIX)
+app.include_router(analytics_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws_router)
 
 

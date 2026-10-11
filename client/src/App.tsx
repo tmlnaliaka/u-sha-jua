@@ -8,6 +8,9 @@ import { DispatchBoard } from './components/DispatchBoard';
 import { ReportModal } from './components/ReportModal';
 import { SimulatorModal } from './components/SimulatorModal';
 import { ResponderFleet } from './components/ResponderFleet';
+import { CivilianPortalModal } from './components/CivilianPortalModal';
+import { AnalyticsModal } from './components/AnalyticsModal';
+import { ResponderPwaModal } from './components/ResponderPwaModal';
 
 export const App: React.FC = () => {
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -17,8 +20,14 @@ export const App: React.FC = () => {
   const [wsConnected, setWsConnected] = useState<boolean>(false);
   const [lowBandwidth, setLowBandwidth] = useState<boolean>(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  
+  // Modals state
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [isSimulatorModalOpen, setIsSimulatorModalOpen] = useState<boolean>(false);
+  const [isCivilianPortalOpen, setIsCivilianPortalOpen] = useState<boolean>(false);
+  const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState<boolean>(false);
+  const [isResponderPwaOpen, setIsResponderPwaOpen] = useState<boolean>(false);
+  
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Play synthetic browser audio alert for critical emergencies
@@ -83,6 +92,9 @@ export const App: React.FC = () => {
           if (newInc.urgency_level === 'Critical') {
             playAlertSound();
           }
+        } else if (event === 'batch_incidents_reported') {
+          loadIncidents();
+          showToast(`🚨 INGESTED ${data.count} BATCH DISTRESS REPORTS`);
         } else if (event === 'status_updated') {
           const updated: Incident = data;
           setIncidents((prev) =>
@@ -122,6 +134,11 @@ export const App: React.FC = () => {
           if (updatedResp.status === 'Available') {
             setActiveRoutes((prev) => prev.filter((r) => r.responder_id !== updatedResp.id));
           }
+        } else if (event === 'responder_location_updated') {
+          const updatedResp: ResponderUnit = data;
+          setResponders((prev) =>
+            prev.map((r) => (r.id === updatedResp.id ? updatedResp : r))
+          );
         }
       },
       (connected) => {
@@ -204,8 +221,10 @@ export const App: React.FC = () => {
       setIncidents((prev) => [created, ...prev.filter((i) => i.id !== created.id)]);
       setSelectedIncident(created);
       showToast(`Incident ingested: ${created.location_name}`);
+      return created;
     } catch (err) {
       console.error('Error submitting report', err);
+      throw err;
     }
   };
 
@@ -222,6 +241,9 @@ export const App: React.FC = () => {
         onToggleLowBandwidth={() => setLowBandwidth(!lowBandwidth)}
         onOpenReportModal={() => setIsReportModalOpen(true)}
         onOpenSimulatorModal={() => setIsSimulatorModalOpen(true)}
+        onOpenCivilianPortal={() => setIsCivilianPortalOpen(true)}
+        onOpenAnalyticsModal={() => setIsAnalyticsModalOpen(true)}
+        onOpenResponderPwa={() => setIsResponderPwaOpen(true)}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled(!soundEnabled)}
         criticalCount={criticalCount}
@@ -272,11 +294,35 @@ export const App: React.FC = () => {
         onUpdateStatus={handleUpdateResponderStatus}
       />
 
-      {/* Civilian Report Submission Modal */}
+      {/* Standard Civilian Report Modal */}
       <ReportModal
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
-        onSubmit={handleSubmitReport}
+        onSubmit={async (r) => { await handleSubmitReport(r); }}
+      />
+
+      {/* Dedicated Civilian Public Distress Portal & Tracking */}
+      <CivilianPortalModal
+        isOpen={isCivilianPortalOpen}
+        onClose={() => setIsCivilianPortalOpen(false)}
+        onSubmitReport={handleSubmitReport}
+      />
+
+      {/* Spatial Analytics & Export Modal */}
+      <AnalyticsModal
+        isOpen={isAnalyticsModalOpen}
+        onClose={() => setIsAnalyticsModalOpen(false)}
+        incidents={incidents}
+      />
+
+      {/* Field Responder Tactical Mobile Cockpit View */}
+      <ResponderPwaModal
+        isOpen={isResponderPwaOpen}
+        onClose={() => setIsResponderPwaOpen(false)}
+        responders={responders}
+        incidents={incidents}
+        onUpdateResponderStatus={handleUpdateResponderStatus}
+        onUpdateIncidentStatus={handleUpdateStatus}
       />
 
       {/* Crisis Stress-Test Simulator Modal */}

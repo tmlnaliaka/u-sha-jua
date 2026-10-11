@@ -12,7 +12,8 @@ from schemas.responder import (
     ResponderUnitResponse,
     DispatchAssignmentRequest,
     ResponderStatusUpdate,
-    SurgeSimulationRequest
+    SurgeSimulationRequest,
+    ResponderCoordinate
 )
 from services.nlp_service import nlp_service
 from services.websocket_manager import ws_manager
@@ -198,6 +199,27 @@ async def update_responder_status(
 
     d = responder.to_dict()
     await ws_manager.broadcast("responder_status_updated", d)
+    return d
+
+@router.patch("/{responder_id}/location", response_model=ResponderUnitResponse)
+async def update_responder_location(
+    responder_id: str,
+    coords: ResponderCoordinate,
+    db: Session = Depends(get_db)
+):
+    """Updates real-time GPS coordinates of a field responder unit and broadcasts telemetry."""
+    responder = db.query(ResponderUnit).filter(ResponderUnit.id == responder_id).first()
+    if not responder:
+        raise HTTPException(status_code=404, detail="Responder unit not found")
+
+    responder.latitude = coords.latitude
+    responder.longitude = coords.longitude
+
+    db.commit()
+    db.refresh(responder)
+
+    d = responder.to_dict()
+    await ws_manager.broadcast("responder_location_updated", d)
     return d
 
 @router.post("/surge-simulate")

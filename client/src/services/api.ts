@@ -120,6 +120,47 @@ export const api = {
     return res.json();
   },
 
+  async updateResponderLocation(responderId: string, latitude: number, longitude: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/responders/${responderId}/location`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ latitude, longitude }),
+    });
+    if (!res.ok) throw new Error('Failed to update responder location');
+    return res.json();
+  },
+
+  async getWeatherTelemetry(): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/weather/telemetry`);
+    if (!res.ok) throw new Error('Failed to fetch weather telemetry');
+    return res.json();
+  },
+
+  async getFloodZones(): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/weather/flood-zones`);
+    if (!res.ok) throw new Error('Failed to fetch flood zones');
+    return res.json();
+  },
+
+  async getAnalyticsSummary(): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/analytics/summary`);
+    if (!res.ok) throw new Error('Failed to fetch analytics summary');
+    return res.json();
+  },
+
+  async trackIncident(trackingId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/incidents/track/${encodeURIComponent(trackingId)}`);
+    if (!res.ok) {
+      if (res.status === 404) throw new Error('Incident tracking ID not found');
+      throw new Error('Failed to track incident');
+    }
+    return res.json();
+  },
+
+  getCsvExportUrl(): string {
+    return `${API_BASE}/api/v1/analytics/export/csv`;
+  },
+
 
   createWebSocket(
     onMessage: (event: string, data: any) => void,

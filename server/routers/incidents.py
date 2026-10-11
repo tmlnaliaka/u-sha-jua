@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status, Response
 from sqlalchemy.orm import Session
 from database import get_db
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
+from models.responder import ResponderUnit
 from schemas.incident import (
     IncidentReportRaw,
     IncidentCreate,
@@ -278,6 +279,32 @@ def get_cache_metrics():
         "cache_hit_rate": round(spatial_cache.hit_rate * 100, 2),
         "nlp_cache_hits": nlp_service.cache.hits,
         "nlp_cache_misses": nlp_service.cache.misses
+    }
+
+@router.get("/track/{incident_id}")
+def track_civilian_incident(incident_id: str, db: Session = Depends(get_db)):
+    """Civilian distress tracking endpoint providing status timeline and responder telemetry."""
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        incident = db.query(Incident).filter(Incident.id.startswith(incident_id)).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident tracking code not found")
+
+    assigned_unit = db.query(ResponderUnit).filter(ResponderUnit.assigned_incident_id == incident.id).first()
+
+    status_val = incident.status.value if hasattr(incident.status, "value") else str(incident.status)
+    stages = [
+        {"step": 1, "name": "Distress Received & AI Geocoded", "completed": True, "active": False},
+        {"step": 2, "name": "EOC Command Triage", "completed": status_val in ["Dispatched", "Resolved"], "active": status_val == "Pending"},
+        {"step": 3, "name": "Emergency Unit Dispatched", "completed": status_val == "Resolved", "active": status_val == "Dispatched"},
+        {"step": 4, "name": "On Scene & Resolved", "completed": status_val == "Resolved", "active": False}
+    ]
+
+    return {
+        "incident": incident.to_dict(),
+        "assigned_responder": assigned_unit.to_dict() if assigned_unit else None,
+        "current_stage": 4 if status_val == "Resolved" else (3 if status_val == "Dispatched" else 2),
+        "stages": stages
     }
 
 @router.get("/{incident_id}", response_model=IncidentResponse)
