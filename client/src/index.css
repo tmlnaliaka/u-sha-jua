@@ -3,101 +3,112 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
   body {
-    background-color: #0b0f17;
-    color: #f1f5f9;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #f4f6f5;
+    color: #0f172a;
+    font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  select:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid #075985;
+    outline-offset: 2px;
   }
 }
 
-/* Custom Leaflet Map styling for Dark & Defense Aesthetics */
 .leaflet-container {
   width: 100%;
   height: 100%;
-  background-color: #0b0f17 !important;
-  font-family: 'Inter', sans-serif !important;
+  background-color: #e2e8f0;
+  font-family: "Segoe UI", system-ui, sans-serif;
 }
 
-/* Dark mode tile filter for OpenStreetMap */
+.leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.94) !important;
+  color: #334155 !important;
+}
+
+.leaflet-control-attribution a {
+  color: #075985 !important;
+}
+
 .dark-map-tiles {
-  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+  filter: saturate(0.45) contrast(0.9);
 }
 
-/* Leaflet Popup Styling */
-.leaflet-popup-content-wrapper {
-  background: #111827 !important;
-  color: #f8fafc !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-radius: 8px !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7) !important;
-  padding: 0 !important;
+.marker-pin-critical,
+.marker-pin-medium,
+.marker-pin-low {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.leaflet-popup-content {
-  margin: 12px 14px !important;
-  line-height: 1.4 !important;
-}
-
-.leaflet-popup-tip {
-  background: #111827 !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-}
-
-/* Custom Marker Pulsing Animation */
 .marker-pin-critical {
-  position: relative;
   width: 22px;
   height: 22px;
+  border: 2px solid #fff;
   border-radius: 50%;
-  background: #ef4444;
-  border: 2px solid #ffffff;
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.9);
+  background: #be123c;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.48);
 }
 
-.marker-pin-critical::after {
-  content: '';
-  position: absolute;
-  top: -6px;
-  left: -6px;
-  width: 30px;
-  height: 30px;
+.marker-pin-critical span,
+.marker-pin-medium span,
+.marker-pin-low span {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  border: 2px solid #ef4444;
-  animation: ping-slow 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  background: #fff;
 }
 
 .marker-pin-medium {
-  position: relative;
   width: 18px;
   height: 18px;
+  border: 2px solid #fff;
   border-radius: 50%;
-  background: #f59e0b;
-  border: 2px solid #ffffff;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
+  background: #b45309;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.4);
 }
 
 .marker-pin-low {
-  position: relative;
   width: 14px;
   height: 14px;
+  border: 2px solid #fff;
   border-radius: 50%;
-  background: #10b981;
-  border: 2px solid #ffffff;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
+  background: #047857;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
 }
 
-/* Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
+
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #e2e8f0;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 3px;
+  border: 2px solid #e2e8f0;
+  border-radius: 6px;
+  background: #94a3b8;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #64748b;
 }

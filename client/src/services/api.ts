@@ -5,6 +5,7 @@ import {
   CivilianReportInput,
   GeoJSONFeatureCollection,
   IncidentStatus,
+  HazardFeedResponse,
   SignInInput,
   SignUpInput,
 } from '../types';
@@ -41,6 +42,12 @@ async function responseError(response: Response, fallback: string): Promise<stri
 }
 
 export const api = {
+  async getHazardAlerts(): Promise<HazardFeedResponse> {
+    const res = await fetch(`${API_BASE}/api/v1/hazards/alerts`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(await responseError(res, 'Could not load public hazard alerts.'));
+    return res.json();
+  },
+
   async signIn(input: SignInInput): Promise<AuthResponse> {
     const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
       method: 'POST',

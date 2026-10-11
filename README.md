@@ -48,15 +48,19 @@ flowchart TD
 - **Asynchronous AI Distress Extraction**: Extracts incident type (`Flood`, `Fire`, `Collapse`), urgency level (`Critical`, `Medium`, `Low`), and resolves landmark coordinates (Mathare, Kibera, Gikomba, Mukuru, etc.) via Gemini API and a deterministic offline spatial gazetteer.
 - **Evidence Review & Dispatcher Verification**: Reports can include GPS and up to six photo/video files. Gemini can summarize visible signs in photos as provisional support; it does not verify incidents. A dispatcher explicitly confirms or rejects each report, and only confirmed incidents reveal a hazard-specific safety guide.
 - **Mapbox Satellite Context**: An optional Mapbox satellite-streets layer helps orient responders. Satellite tiles are not live imagery and must not be treated as evidence that a reported incident is active.
+- **Regional Public Warnings**: Authenticated users can view active public GDACS and Kenya Meteorological Department CAP alerts with source, timestamps, feed freshness, severity, and original notice links. Expired/cancelled KMD notices are excluded. Warning-area markers are approximate and never confirm community reports.
 - **Africa's Talking SMS**: An optional protected inbound SMS webhook creates incidents from SMS, and opt-in reporters can receive a receipt and status updates. API credentials remain server-side.
 - **Separate survivor and administrator portals**: Survivor accounts can submit reports and view only reports linked to their account. Administrators are provisioned server-side and can review all incidents, confirm reports, and dispatch responders. Public registration can never create an administrator.
 - **Protected sessions and dispatch controls**: Passwords are stored as salted PBKDF2 hashes, short-lived bearer tokens protect the API, and the live dispatch WebSocket requires an administrator session.
 - **Spatial PostGIS Engine**: Native geometry storage (EPSG:4326) and viewport-bounded spatial feeds (`/api/v1/incidents/spatial-feed`).
 - **Live WebSocket Pipeline**: Sub-second push telemetry broadcasting new incidents and status updates to connected emergency operations centers.
-- **High-Density GIS Command Dashboard**:
+- **Response operations workspace**:
+  - Separate overview, incident map, and public-alert pages; the survivor portal remains distinct.
   - OpenStreetMap basemap with optional OpenWeather overlays.
-  - Urgency-pulsing vector marker clusters (Red Pulsing for Critical rescue traps, Amber for Medium escalating risk, Green for Low/Advisory).
-  - Tactical split-screen layout with synchronized vector layers and real-time status controls (`Pending` ➔ `Dispatched` ➔ `Resolved`).
+  - Distinct severity-coded incident markers: red for critical, amber for medium, and green for low urgency.
+  - Map-point selection opens a side inspector with report provenance, evidence, dispatcher verification, response guidance, and status actions; full details are available as a dedicated view.
+  - Community reports and source-attributed public warnings use visibly different map symbols and are never merged.
+  - Real-time status controls (`Pending` ➔ `Dispatched` ➔ `Resolved`).
   - Constrained-bandwidth toggle mode for throttled field connectivity.
 - **Auditable Quality & Testing**: Pytest test suite covering endpoint validation, coordinate validation, and mocked NLP inference.
 - **High-Concurrency Benchmarking**: Asynchronous load-testing harness simulating 50 concurrent incoming SMS distress messages per second with p50, p95, and p99 latency profiling.
@@ -123,6 +127,10 @@ npm run dev
 
 OpenStreetMap provides the default map. Set `VITE_OPENWEATHER_API_KEY` in `client/.env.local` to enable optional precipitation, cloud, temperature, wind, and pressure overlays. This browser-side tile key is visible to users; restrict it in your OpenWeather account and rotate it if exposed. Set `VITE_MAPBOX_ACCESS_TOKEN` to a URL-restricted public Mapbox token to enable the optional satellite-context base layer. The map works without provider keys.
 
+The public GDACS and KMD CAP warning feeds do not require provider keys. The dashboard checks these sources in the backend, shows each source's freshness/degraded state, and refreshes the cached feed every five minutes. Public warnings supplement—not verify—self-reported incidents. Check the linked agency notice and local authorities before acting on an external warning.
+
+**Configuration audit:** Required application authentication settings are `AUTH_SECRET_KEY`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` (not mapping API keys). Optional browser map integrations are `VITE_OPENWEATHER_API_KEY` and `VITE_MAPBOX_ACCESS_TOKEN`. Optional server integrations are `GEMINI_API_KEY`, `GOOGLE_MAPS_API_KEY`, and Africa's Talking `AFRICASTALKING_API_KEY`, `AFRICASTALKING_USERNAME`, `AFRICASTALKING_WEBHOOK_TOKEN` (plus optional `AFRICASTALKING_SENDER_ID`). Keep server credentials only in untracked server/deployment secrets; never put them in frontend code. No provider key is required for OSM maps, GDACS alerts, or KMD warnings. A deployment still needs network access to the public tile and feed hosts.
+
 ---
 
 ### Option B: Docker Compose (Full Stack with PostGIS)
@@ -151,6 +159,7 @@ docker compose up -d --build
 | `GET` | `/api/v1/incidents` | Administrators query all incidents; survivors see only their own |
 | `GET` | `/api/v1/incidents/spatial-feed` | Authenticated GeoJSON; survivor results are account-scoped |
 | `PATCH` | `/api/v1/incidents/{id}/status` | Administrator-only triage updates (`Pending`, `Dispatched`, `Resolved`) |
+| `GET` | `/api/v1/hazards/alerts` | Authenticated current GDACS and KMD public alerts with per-source freshness |
 | `WS` | `/ws/live-incidents` | Administrator-only real-time WebSocket event stream |
 | `GET` | `/health` | System health check |
 

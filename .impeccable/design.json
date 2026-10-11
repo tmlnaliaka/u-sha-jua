@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-11T22:44:59Z",
+  "title": "Design System: u-SHA-jua Response Operations",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#0F172A",
+        "tonalRamp": ["#020617", "#0F172A", "#1E293B", "#334155", "#475569", "#64748B", "#94A3B8", "#F8FAFC"]
+      },
+      "field-paper": {
+        "role": "neutral",
+        "displayName": "Field Paper",
+        "canonical": "#F4F6F5",
+        "tonalRamp": ["#0F172A", "#1E293B", "#334155", "#64748B", "#94A3B8", "#CBD5E1", "#E2E8F0", "#F4F6F5"]
+      },
+      "panel-white": {
+        "role": "neutral",
+        "displayName": "Panel White",
+        "canonical": "#FFFFFF",
+        "tonalRamp": ["#0F172A", "#1E293B", "#334155", "#64748B", "#94A3B8", "#CBD5E1", "#F1F5F9", "#FFFFFF"]
+      },
+      "survey-blue": {
+        "role": "primary",
+        "displayName": "Survey Blue",
+        "canonical": "#0C4A6E",
+        "tonalRamp": ["#082F49", "#0C4A6E", "#075985", "#0369A1", "#0284C7", "#38BDF8", "#7DD3FC", "#E0F2FE"]
+      },
+      "critical-rose": {
+        "role": "tertiary",
+        "displayName": "Critical Rose",
+        "canonical": "#BE123C",
+        "tonalRamp": ["#4C0519", "#881337", "#9F1239", "#BE123C", "#E11D48", "#FB7185", "#FECDD3", "#FFF1F2"]
+      },
+      "caution-amber": {
+        "role": "secondary",
+        "displayName": "Caution Amber",
+        "canonical": "#B45309",
+        "tonalRamp": ["#451A03", "#78350F", "#92400E", "#B45309", "#D97706", "#F59E0B", "#FCD34D", "#FEF3C7"]
+      },
+      "confirmed-green": {
+        "role": "secondary",
+        "displayName": "Confirmed Green",
+        "canonical": "#047857",
+        "tonalRamp": ["#022C22", "#064E3B", "#065F46", "#047857", "#059669", "#34D399", "#A7F3D0", "#ECFDF5"]
+      },
+      "map-slate": {
+        "role": "neutral",
+        "displayName": "Map Slate",
+        "canonical": "#E2E8F0",
+        "tonalRamp": ["#0F172A", "#1E293B", "#334155", "#475569", "#64748B", "#94A3B8", "#CBD5E1", "#E2E8F0"]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Title",
+        "purpose": "Page and inspector headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Report details, explanations, and source notes."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Compact filter, status, and timestamp text."
+      }
+    },
+    "shadows": [
+      {
+        "name": "map-marker-critical",
+        "value": "0 2px 8px rgba(15, 23, 42, 0.48)",
+        "purpose": "Separate a critical incident marker from varied map tiles."
+      }
+    ],
+    "motion": [
+      {
+        "name": "color-state-transition",
+        "value": "150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Subtle color changes on button and row hover/focus."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The main action in a response workflow.",
+      "html": "<button class=\"ds-button-primary\">Dispatch</button>",
+      "css": ".ds-button-primary { min-height: 44px; padding: 10px 16px; border: 1px solid #0C4A6E; border-radius: 6px; background: #0C4A6E; color: #FFFFFF; font: 600 14px/1.5 'Segoe UI', system-ui, sans-serif; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-button-primary:hover { background: #082F49; } .ds-button-primary:focus-visible { outline: 2px solid #075985; outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A lower-emphasis action that preserves the same touch target.",
+      "html": "<button class=\"ds-button-secondary\">Open map</button>",
+      "css": ".ds-button-secondary { min-height: 44px; padding: 10px 12px; border: 1px solid #CBD5E1; border-radius: 6px; background: #FFFFFF; color: #0F172A; font: 600 14px/1.5 'Segoe UI', system-ui, sans-serif; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-button-secondary:hover { background: #F8FAFC; } .ds-button-secondary:focus-visible { outline: 2px solid #075985; outline-offset: 2px; }"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "description": "A clearly bordered report search field.",
+      "html": "<label class=\"ds-field\"><span>Search reports</span><input type=\"search\" placeholder=\"Search location or report\" /></label>",
+      "css": ".ds-field { display: grid; gap: 6px; color: #334155; font: 600 12px/1.5 'Segoe UI', system-ui, sans-serif; } .ds-field input { min-height: 44px; padding: 8px 12px; border: 1px solid #CBD5E1; border-radius: 6px; background: #FFFFFF; color: #0F172A; font: 400 14px/1.5 'Segoe UI', system-ui, sans-serif; } .ds-field input:focus-visible { outline: 2px solid #075985; outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "description": "A textual incident state with a restrained tinted background.",
+      "html": "<span class=\"ds-status-chip ds-status-chip-pending\">Pending</span>",
+      "css": ".ds-status-chip { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 8px; border-radius: 4px; font: 700 11px/1.4 'Segoe UI', system-ui, sans-serif; } .ds-status-chip-pending { background: #FEF3C7; color: #78350F; } .ds-status-chip-critical { background: #FFF1F2; color: #881337; } .ds-status-chip-confirmed { background: #ECFDF5; color: #064E3B; }"
+    },
+    {
+      "name": "Page Navigation",
+      "kind": "nav",
+      "description": "A concise, keyboard-operable page switcher.",
+      "html": "<nav class=\"ds-navigation\" aria-label=\"Administrator pages\"><button aria-current=\"page\">Overview</button><button>Map</button><button>Alerts</button></nav>",
+      "css": ".ds-navigation { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid #CBD5E1; background: #FFFFFF; } .ds-navigation button { flex: 0 0 auto; min-height: 44px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #475569; font: 600 14px/1.5 'Segoe UI', system-ui, sans-serif; white-space: nowrap; } .ds-navigation button[aria-current='page'] { border-bottom-color: #0C4A6E; color: #0F172A; } .ds-navigation button:hover { color: #0F172A; } .ds-navigation button:focus-visible { outline: 2px solid #075985; outline-offset: -2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Field Atlas Ledger",
+    "overview": "The administrator workspace pairs the spatial clarity of a field atlas with the traceability of an incident ledger. Cool daylight surfaces, ink-dark type, restrained survey blue, and compact, source-aware labels keep the interface legible during dispatch work without turning every status into an alarm.\n\nThe system is designed for operators scanning community reports, checking evidence, verifying incidents, and coordinating response across a map. It separates public warnings from community reports, makes verification provenance visible, and keeps survivor reporting in its own portal. On narrow screens, navigation shortens and the map and incident queue become a vertically scrollable sequence.",
+    "keyCharacteristics": [
+      "Operational first: the report queue, state, and next action are easy to scan.",
+      "Geographic context with an evidence-led incident ledger.",
+      "Flat, cool-toned surfaces; urgency colors are reserved for meaningful status."
+    ],
+    "rules": [
+      {
+        "name": "The Provenance Stays Visible Rule",
+        "body": "A community report remains visibly unverified until a dispatcher confirms it; an external warning retains its source identity and never becomes a community report.",
+        "section": "colors"
+      },
+      {
+        "name": "The State Is Text Rule",
+        "body": "Urgency, verification, and response status always have readable text; color is a reinforcing cue, not the sole signal.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Use borders and tonal surfaces for layout hierarchy; reserve shadows for geographic marker legibility.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep community incidents, their verification state, and external alert sources distinguishable.",
+      "Do use OSM as the no-key map foundation; optional provider layers must not block map use.",
+      "Do preserve keyboard focus, clear textual status, and touch-sized controls at narrow widths."
+    ],
+    "donts": [
+      "Don't let an external public warning confirm, create, or replace a self-reported incident.",
+      "Don't imply that satellite imagery is live evidence or that an empty warning feed guarantees safety.",
+      "Don't use urgency colors without labels or apply marker animations to every incident."
+    ]
+  }
+}

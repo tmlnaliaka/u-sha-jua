@@ -7,6 +7,7 @@ from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
 from routers import incidents_router, ws_router
 from routers.auth import router as auth_router
 from routers.integrations import router as integrations_router
+from routers.hazards import router as hazards_router
 from services.auth_service import bootstrap_admin
 import uuid
 from datetime import datetime, timezone
@@ -117,6 +118,7 @@ app.add_middleware(
 app.include_router(incidents_router, prefix=settings.API_V1_PREFIX)
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(integrations_router, prefix=settings.API_V1_PREFIX)
+app.include_router(hazards_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws_router)
 
 @app.get("/health", tags=["Health"])

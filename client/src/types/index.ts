@@ -59,6 +59,42 @@ export interface Incident {
   evidence: IncidentEvidence[];
 }
 
+export type HazardSourceState = 'ok' | 'stale' | 'degraded' | 'error';
+
+export interface HazardSourceStatus {
+  source: string;
+  status: HazardSourceState;
+  fetched_at: string;
+  published_at: string | null;
+  url: string;
+  message: string;
+}
+
+export interface HazardAlert {
+  id: string;
+  source: string;
+  headline: string;
+  event: string;
+  severity: string;
+  urgency: string;
+  certainty: string;
+  description: string;
+  instruction: string | null;
+  areas: string[];
+  coordinates: Coordinates | null;
+  issued_at: string | null;
+  effective_at: string | null;
+  expires_at: string | null;
+  source_url: string;
+  alert_level: string;
+}
+
+export interface HazardFeedResponse {
+  alerts: HazardAlert[];
+  sources: HazardSourceStatus[];
+  fetched_at: string;
+}
+
 export interface CivilianReportInput {
   raw_text: string;
   sender_phone?: string;
