@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Incident, IncidentStatus } from '../types';
-import { ShieldCheck, Send } from 'lucide-react';
+import { Incident, IncidentStatus, ResponderUnit, ActiveRoute } from '../types';
+import { ShieldCheck, Send, Navigation, Truck, LifeBuoy, AlertTriangle } from 'lucide-react';
 
 interface DisasterMapProps {
   incidents: Incident[];
@@ -10,6 +10,9 @@ interface DisasterMapProps {
   onSelectIncident: (incident: Incident) => void;
   onUpdateStatus: (id: string, status: IncidentStatus) => void;
   lowBandwidth: boolean;
+  responders?: ResponderUnit[];
+  activeRoutes?: ActiveRoute[];
+  onDispatchResponder?: (responderId: string, incidentId: string) => void;
 }
 
 // Controller to handle programmatic camera flyTo
@@ -20,7 +23,7 @@ const MapController: React.FC<{ selectedIncident: Incident | null }> = ({ select
     if (selectedIncident) {
       map.flyTo(
         [selectedIncident.coordinates.latitude, selectedIncident.coordinates.longitude],
-        15,
+        14,
         { duration: 1.2 }
       );
     }
@@ -54,12 +57,50 @@ const createCustomMarker = (urgency: string) => {
   });
 };
 
+// Create custom DOM DivIcon for emergency responder units
+const createResponderMarker = (unit: ResponderUnit) => {
+  const isDispatched = unit.status === 'Dispatched' || unit.status === 'OnScene';
+  const color = unit.unit_type === 'Ambulance'
+    ? '#38bdf8'
+    : unit.unit_type === 'FireEngine'
+    ? '#f97316'
+    : unit.unit_type === 'WaterRescue'
+    ? '#2dd4bf'
+    : '#a855f7';
+
+  const emoji = unit.unit_type === 'Ambulance'
+    ? '🚑'
+    : unit.unit_type === 'FireEngine'
+    ? '🚒'
+    : unit.unit_type === 'WaterRescue'
+    ? '🚤'
+    : '🚁';
+
+  const html = `
+    <div style="position: relative; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: #0f172a; border: 2px solid ${color}; border-radius: 50%; box-shadow: 0 0 12px ${color}88;">
+      <span style="font-size: 14px;">${emoji}</span>
+      ${isDispatched ? `<span style="position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%; animation: pulse 1s infinite;"></span>` : ''}
+    </div>
+  `;
+
+  return L.divIcon({
+    className: 'custom-responder-marker',
+    html,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16],
+  });
+};
+
 export const DisasterMap: React.FC<DisasterMapProps> = ({
   incidents,
   selectedIncident,
   onSelectIncident,
   onUpdateStatus,
   lowBandwidth,
+  responders = [],
+  activeRoutes = [],
+  onDispatchResponder
 }) => {
   // Kenya Default Center (Nairobi Metropolitan / Informal Settlement Basin)
   const defaultPosition: [number, number] = [-1.286389, 36.817223];
@@ -86,7 +127,27 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
           maxZoom={19}
         />
 
-        {/* Render Vector Markers */}
+        {/* Dynamic Vector Route Polylines for active dispatches */}
+        {activeRoutes.map((route, idx) => (
+          <Polyline
+            key={`route-${idx}-${route.responder_id}`}
+            positions={[route.origin, route.destination]}
+            pathOptions={{
+              color: '#38bdf8',
+              weight: 3.5,
+              dashArray: '8, 8',
+              opacity: 0.85
+            }}
+          >
+            <Tooltip permanent={false} direction="top" offset={[0, -10]}>
+              <div className="text-xs font-mono font-semibold text-sky-400 bg-slate-900 px-1 py-0.5 rounded">
+                ⚡ {route.unit_callsign}: {route.distance_km} km (ETA {route.eta_minutes} min)
+              </div>
+            </Tooltip>
+          </Polyline>
+        ))}
+
+        {/* Render Incident Markers */}
         {incidents.map((incident) => {
           const markerIcon = createCustomMarker(incident.urgency_level);
 
@@ -163,12 +224,49 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
             </Marker>
           );
         })}
+
+        {/* Render Emergency Responder Fleet Markers */}
+        {responders.map((unit) => {
+          const respIcon = createResponderMarker(unit);
+          return (
+            <Marker
+              key={unit.id}
+              position={[unit.coordinates.latitude, unit.coordinates.longitude]}
+              icon={respIcon}
+            >
+              <Popup>
+                <div className="p-1 space-y-1.5 text-slate-100 max-w-xs">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-1">
+                    <span className="text-xs font-bold text-white">{unit.callsign}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                      unit.status === 'Available' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                    }`}>
+                      {unit.status}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    <span className="text-slate-400">Station:</span> {unit.base_station}
+                  </p>
+                  {selectedIncident && unit.status === 'Available' && (
+                    <button
+                      onClick={() => onDispatchResponder && onDispatchResponder(unit.id, selectedIncident.id)}
+                      className="w-full mt-1 py-1 px-2 rounded bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-medium flex items-center justify-center gap-1 transition shadow"
+                    >
+                      <Navigation className="w-3 h-3" />
+                      Dispatch to {selectedIncident.location_name.slice(0, 18)}...
+                    </button>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
       </MapContainer>
 
       {/* Floating Map Legend Overlay */}
-      <div className="absolute bottom-4 left-4 z-[1000] bg-[#111827]/90 backdrop-blur-md border border-white/10 rounded-xl p-3 shadow-2xl text-xs space-y-2 pointer-events-auto max-w-[200px]">
+      <div className="absolute bottom-4 left-4 z-[1000] bg-[#111827]/90 backdrop-blur-md border border-white/10 rounded-xl p-3 shadow-2xl text-xs space-y-2 pointer-events-auto max-w-[220px]">
         <h5 className="font-semibold text-slate-200 tracking-wider text-[11px] uppercase border-b border-white/10 pb-1">
-          Vector Urgency Legend
+          Tactical Map Legend
         </h5>
         <div className="space-y-1.5">
           <div className="flex items-center space-x-2">
@@ -182,6 +280,10 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
           <div className="flex items-center space-x-2">
             <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
             <span className="text-slate-300 text-[11px]">Low (Advisory/Monitored)</span>
+          </div>
+          <div className="pt-1 border-t border-white/10 flex items-center space-x-2">
+            <span className="text-[12px]">🚑 🚒 🚤</span>
+            <span className="text-sky-300 text-[11px]">Active Responders & Routes</span>
           </div>
         </div>
       </div>

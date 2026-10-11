@@ -5,7 +5,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from config import settings
 from database import Base, engine, SessionLocal
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
-from routers import incidents_router, ws_router, sms_router
+from routers import incidents_router, ws_router, sms_router, responders_router
+from routers.responders import seed_responder_fleet
 from services.spatial_index import spatial_grid, spatial_cache
 from services.websocket_manager import ws_manager
 import uuid
@@ -96,9 +97,10 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     seed_initial_incidents()
     
-    # Warm up in-memory spatial grid index from persistence layer
+    # Warm up in-memory spatial grid index from persistence layer & seed fleet
     db = SessionLocal()
     try:
+        seed_responder_fleet(db)
         active_incidents = db.query(Incident).all()
         for inc in active_incidents:
             spatial_grid.add_or_update(inc.to_dict())
@@ -110,7 +112,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="u-SHA-jua Disaster Informatics Platform",
     description="Resilient Asynchronous Geospatial Disaster Intelligence & Emergency Dispatch System",
-    version="1.1.0-scaled",
+    version="1.2.0-tactical",
     lifespan=lifespan
 )
 
@@ -128,7 +130,9 @@ app.add_middleware(
 # Mount API Routers
 app.include_router(incidents_router, prefix=settings.API_V1_PREFIX)
 app.include_router(sms_router, prefix=settings.API_V1_PREFIX)
+app.include_router(responders_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws_router)
+
 
 @app.get("/health", tags=["Health"])
 def health_check():

@@ -1,11 +1,13 @@
 import React from 'react';
-import { Radio, Wifi, WifiOff, AlertTriangle, Plus, Volume2, VolumeX, ShieldAlert } from 'lucide-react';
+import { Radio, Wifi, WifiOff, AlertTriangle, Plus, Volume2, VolumeX, ShieldAlert, Zap } from 'lucide-react';
+
 
 interface HeaderProps {
   connected: boolean;
   lowBandwidth: boolean;
   onToggleLowBandwidth: () => void;
   onOpenReportModal: () => void;
+  onOpenSimulatorModal: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   criticalCount: number;
@@ -16,6 +18,7 @@ export const Header: React.FC<HeaderProps> = ({
   lowBandwidth,
   onToggleLowBandwidth,
   onOpenReportModal,
+  onOpenSimulatorModal,
   soundEnabled,
   onToggleSound,
   criticalCount,
@@ -34,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
             </h1>
             <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-              v1.0.0 PostGIS
+              v1.2.0 Tactical
             </span>
           </div>
           <p className="text-xs text-slate-400">
@@ -87,6 +90,16 @@ export const Header: React.FC<HeaderProps> = ({
           <span>{connected ? 'WS LIVE' : 'WS RECONNECTING'}</span>
         </div>
 
+        {/* Crisis Simulator Button */}
+        <button
+          onClick={onOpenSimulatorModal}
+          className="flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-medium text-xs shadow-lg shadow-indigo-950/50 transition border border-indigo-400/30"
+          title="Launch crisis stress-test simulator"
+        >
+          <Zap className="w-4 h-4 text-amber-300 fill-current" />
+          <span>CRISIS SIMULATOR</span>
+        </button>
+
         {/* Report Ingestion Button */}
         <button
           onClick={onOpenReportModal}
@@ -99,3 +112,4 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+

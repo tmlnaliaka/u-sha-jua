@@ -81,6 +81,46 @@ export const api = {
     return res.json();
   },
 
+  async getResponders(incidentId?: string): Promise<any[]> {
+    const url = incidentId
+      ? `${API_BASE}/api/v1/responders?incident_id=${encodeURIComponent(incidentId)}`
+      : `${API_BASE}/api/v1/responders`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch responders');
+    return res.json();
+  },
+
+  async dispatchResponder(responderId: string, incidentId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/responders/${responderId}/dispatch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ incident_id: incidentId }),
+    });
+    if (!res.ok) throw new Error('Failed to dispatch responder unit');
+    return res.json();
+  },
+
+  async updateResponderStatus(responderId: string, status: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/responders/${responderId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) throw new Error('Failed to update responder status');
+    return res.json();
+  },
+
+  async simulateSurge(surgeCount: number = 3): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/responders/surge-simulate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ surge_count: surgeCount }),
+    });
+    if (!res.ok) throw new Error('Failed to simulate surge');
+    return res.json();
+  },
+
+
   createWebSocket(
     onMessage: (event: string, data: any) => void,
     onStatusChange?: (connected: boolean) => void,

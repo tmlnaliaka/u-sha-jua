@@ -1,19 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Incident, CivilianReportInput, IncidentStatus } from './types';
+import { Incident, CivilianReportInput, IncidentStatus, ResponderUnit, ActiveRoute } from './types';
 import { api } from './services/api';
 import { Header } from './components/Header';
 import { StatCards } from './components/StatCards';
 import { DisasterMap } from './components/DisasterMap';
 import { DispatchBoard } from './components/DispatchBoard';
 import { ReportModal } from './components/ReportModal';
+import { SimulatorModal } from './components/SimulatorModal';
+import { ResponderFleet } from './components/ResponderFleet';
 
 export const App: React.FC = () => {
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [responders, setResponders] = useState<ResponderUnit[]>([]);
+  const [activeRoutes, setActiveRoutes] = useState<ActiveRoute[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [wsConnected, setWsConnected] = useState<boolean>(false);
   const [lowBandwidth, setLowBandwidth] = useState<boolean>(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [isSimulatorModalOpen, setIsSimulatorModalOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Play synthetic browser audio alert for critical emergencies
@@ -41,7 +46,7 @@ export const App: React.FC = () => {
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
-    }, 4000);
+    }, 4500);
   };
 
   // Load initial incidents from backend
@@ -54,8 +59,19 @@ export const App: React.FC = () => {
     }
   };
 
+  // Load responders from backend
+  const loadResponders = async (targetIncId?: string) => {
+    try {
+      const data = await api.getResponders(targetIncId);
+      setResponders(data);
+    } catch (err) {
+      console.error('Failed to load responders', err);
+    }
+  };
+
   useEffect(() => {
     loadIncidents();
+    loadResponders();
 
     // Subscribe to real-time WebSocket events
     const cleanupWs = api.createWebSocket(
@@ -78,6 +94,34 @@ export const App: React.FC = () => {
           showToast(`Status updated: ${updated.location_name} -> ${updated.status}`);
         } else if (event === 'incident_deleted') {
           setIncidents((prev) => prev.filter((i) => i.id !== data.id));
+        } else if (event === 'responder_dispatched') {
+          const { responder, routing } = data;
+          setResponders((prev) =>
+            prev.map((r) => (r.id === responder.id ? responder : r))
+          );
+          if (routing) {
+            setActiveRoutes((prev) => [
+              ...prev.filter((route) => route.responder_id !== responder.id),
+              {
+                responder_id: responder.id,
+                incident_id: responder.assigned_incident_id,
+                origin: [routing.origin[1], routing.origin[0]],
+                destination: [routing.destination[1], routing.destination[0]],
+                distance_km: routing.distance_km,
+                eta_minutes: routing.eta_minutes,
+                unit_callsign: responder.callsign,
+              }
+            ]);
+          }
+          showToast(`⚡ ${responder.callsign} DISPATCHED (ETA ${routing?.eta_minutes || 10}m)`);
+        } else if (event === 'responder_status_updated') {
+          const updatedResp: ResponderUnit = data;
+          setResponders((prev) =>
+            prev.map((r) => (r.id === updatedResp.id ? updatedResp : r))
+          );
+          if (updatedResp.status === 'Available') {
+            setActiveRoutes((prev) => prev.filter((r) => r.responder_id !== updatedResp.id));
+          }
         }
       },
       (connected) => {
@@ -90,6 +134,13 @@ export const App: React.FC = () => {
     };
   }, [playAlertSound, selectedIncident]);
 
+  // Recalculate proximity when selected incident changes
+  useEffect(() => {
+    if (selectedIncident) {
+      loadResponders(selectedIncident.id);
+    }
+  }, [selectedIncident]);
+
   const handleUpdateStatus = async (id: string, status: IncidentStatus) => {
     try {
       const updated = await api.updateStatus(id, status);
@@ -99,8 +150,51 @@ export const App: React.FC = () => {
       if (selectedIncident?.id === id) {
         setSelectedIncident(updated);
       }
+      if (status === 'Resolved') {
+        setActiveRoutes((prev) => prev.filter((r) => r.incident_id !== id));
+      }
     } catch (err) {
       console.error('Error updating status', err);
+    }
+  };
+
+  const handleDispatchResponder = async (responderId: string, incidentId: string) => {
+    try {
+      const result = await api.dispatchResponder(responderId, incidentId);
+      const inc = incidents.find((i) => i.id === incidentId);
+      const unit = responders.find((r) => r.id === responderId);
+
+      if (inc && unit) {
+        setActiveRoutes((prev) => [
+          ...prev.filter((r) => r.responder_id !== responderId),
+          {
+            responder_id: responderId,
+            incident_id: incidentId,
+            origin: [unit.coordinates.latitude, unit.coordinates.longitude],
+            destination: [inc.coordinates.latitude, inc.coordinates.longitude],
+            distance_km: result.distance_km || 4.2,
+            eta_minutes: result.eta_minutes || 12,
+            unit_callsign: unit.callsign,
+          }
+        ]);
+      }
+      loadResponders(selectedIncident?.id);
+      loadIncidents();
+      showToast(`⚡ Dispatched ${result.callsign} to crisis zone!`);
+    } catch (err) {
+      console.error('Error dispatching responder', err);
+    }
+  };
+
+  const handleUpdateResponderStatus = async (responderId: string, status: string) => {
+    try {
+      await api.updateResponderStatus(responderId, status);
+      loadResponders(selectedIncident?.id);
+      if (status === 'Available') {
+        setActiveRoutes((prev) => prev.filter((r) => r.responder_id !== responderId));
+      }
+    } catch (err) {
+      console.error('Error updating responder status', err);
     }
   };
 
@@ -127,6 +221,7 @@ export const App: React.FC = () => {
         lowBandwidth={lowBandwidth}
         onToggleLowBandwidth={() => setLowBandwidth(!lowBandwidth)}
         onOpenReportModal={() => setIsReportModalOpen(true)}
+        onOpenSimulatorModal={() => setIsSimulatorModalOpen(true)}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled(!soundEnabled)}
         criticalCount={criticalCount}
@@ -145,11 +240,14 @@ export const App: React.FC = () => {
             onSelectIncident={setSelectedIncident}
             onUpdateStatus={handleUpdateStatus}
             lowBandwidth={lowBandwidth}
+            responders={responders}
+            activeRoutes={activeRoutes}
+            onDispatchResponder={handleDispatchResponder}
           />
         </div>
 
         {/* Right Tactical Dispatch Board */}
-        <div className="w-full md:w-[420px] lg:w-[480px] h-full shrink-0">
+        <div className="w-full md:w-[420px] lg:w-[480px] h-full shrink-0 flex flex-col">
           <DispatchBoard
             incidents={incidents}
             selectedIncident={selectedIncident}
@@ -166,11 +264,26 @@ export const App: React.FC = () => {
         )}
       </main>
 
+      {/* Bottom Tactical Responder Fleet Matrix */}
+      <ResponderFleet
+        responders={responders}
+        selectedIncident={selectedIncident}
+        onDispatch={handleDispatchResponder}
+        onUpdateStatus={handleUpdateResponderStatus}
+      />
+
       {/* Civilian Report Submission Modal */}
       <ReportModal
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         onSubmit={handleSubmitReport}
+      />
+
+      {/* Crisis Stress-Test Simulator Modal */}
+      <SimulatorModal
+        isOpen={isSimulatorModalOpen}
+        onClose={() => setIsSimulatorModalOpen(false)}
+        onSurgeTriggered={(msg) => showToast(msg)}
       />
     </div>
   );
