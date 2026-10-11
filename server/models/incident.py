@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 import enum
-from sqlalchemy import Column, String, Text, Float, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, String, Text, Float, DateTime, Enum as SQLEnum, Index
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from database import Base, engine
 
@@ -34,19 +34,26 @@ class Incident(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     raw_text = Column(Text, nullable=False)
-    incident_type = Column(SQLEnum(IncidentType), nullable=False, default=IncidentType.FLOOD)
-    urgency_level = Column(SQLEnum(UrgencyLevel), nullable=False, default=UrgencyLevel.MEDIUM)
+    incident_type = Column(SQLEnum(IncidentType), nullable=False, default=IncidentType.FLOOD, index=True)
+    urgency_level = Column(SQLEnum(UrgencyLevel), nullable=False, default=UrgencyLevel.MEDIUM, index=True)
     location_name = Column(String(255), nullable=False)
     
-    # Store lat and lon directly for cross-engine reliability & fast indexing
-    latitude = Column(Float, nullable=False)
-    longitude = Column(Float, nullable=False)
+    # Store lat and lon directly for cross-engine reliability & fast spatial indexing
+    latitude = Column(Float, nullable=False, index=True)
+    longitude = Column(Float, nullable=False, index=True)
     
     if use_geoalchemy:
         coordinates = Column(Geometry('POINT', srid=4326), nullable=True)
         
-    status = Column(SQLEnum(IncidentStatus), nullable=False, default=IncidentStatus.PENDING)
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    status = Column(SQLEnum(IncidentStatus), nullable=False, default=IncidentStatus.PENDING, index=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("idx_incidents_lat_lon", "latitude", "longitude"),
+        Index("idx_incidents_status_urgency_ts", "status", "urgency_level", "timestamp"),
+        Index("idx_incidents_ts_desc", "timestamp"),
+    )
+
 
     def to_dict(self):
         return {

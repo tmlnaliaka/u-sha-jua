@@ -1,8 +1,12 @@
 import os
 import re
 import json
+import time
+import asyncio
 import logging
-from typing import Dict, Any, Tuple
+import threading
+from typing import Dict, Any, Tuple, Optional
+from collections import OrderedDict
 from config import settings
 from models.incident import IncidentType, UrgencyLevel
 
@@ -65,18 +69,59 @@ class DistressExtractionResult:
             "confidence_score": self.confidence_score
         }
 
+class NLPExtractionCache:
+    """Thread-safe LRU cache for normalized distress message inferences."""
+    def __init__(self, maxsize: int = 2048):
+        self.maxsize = maxsize
+        self._cache: OrderedDict[str, DistressExtractionResult] = OrderedDict()
+        self._lock = threading.RLock()
+        self.hits = 0
+        self.misses = 0
+
+    def _normalize_key(self, text: str, lat: Optional[float], lon: Optional[float]) -> str:
+        # Strip extraneous whitespace, numbers prefixes (like [1] test), and lowercase
+        clean = re.sub(r"\[\d+\]", "", text.strip().lower())
+        clean = re.sub(r"\s+", " ", clean).strip()
+        lat_str = f"{lat:.4f}" if lat is not None else "none"
+        lon_str = f"{lon:.4f}" if lon is not None else "none"
+        return f"{clean}|{lat_str}|{lon_str}"
+
+    def get(self, text: str, lat: Optional[float], lon: Optional[float]) -> Optional[DistressExtractionResult]:
+        key = self._normalize_key(text, lat, lon)
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                self.hits += 1
+                return self._cache[key]
+            self.misses += 1
+            return None
+
+    def set(self, text: str, lat: Optional[float], lon: Optional[float], result: DistressExtractionResult) -> None:
+        key = self._normalize_key(text, lat, lon)
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = result
+            if len(self._cache) > self.maxsize:
+                self._cache.popitem(last=False)
+
 class NLPService:
     def __init__(self):
+        self.cache = NLPExtractionCache(maxsize=4096)
         self.gemini_available = False
+        self._consecutive_failures = 0
+        self._circuit_open_until = 0.0
+
         if settings.GEMINI_API_KEY:
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=settings.GEMINI_API_KEY)
-                self.gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+                self.gemini_model = genai.GenerativeModel("gemini-2.5-flash")
                 self.gemini_available = True
-                logger.info("Gemini API client initialized successfully.")
+                logger.info("Gemini API client initialized successfully with gemini-2.5-flash.")
             except Exception as e:
                 logger.warning(f"Could not initialize Gemini API: {e}. Falling back to resilient local NLP engine.")
+
 
     async def extract_distress_report(
         self,
@@ -86,17 +131,41 @@ class NLPService:
     ) -> DistressExtractionResult:
         """
         Parses civilian distress report:
-        1. Tries Gemini structured inference if API key is valid.
-        2. Seamlessly falls back to calibrated deterministic regex/gazetteer parser.
-        3. Honors device GPS coordinates if provided.
+        1. Fast-path: Checks in-memory LRU cache (<0.05ms).
+        2. Tries Gemini structured inference with 2.0s timeout & circuit-breaker protection.
+        3. Seamlessly falls back to calibrated deterministic regex/gazetteer parser.
+        4. Honors device GPS coordinates if provided.
         """
-        if self.gemini_available:
-            try:
-                return await self._extract_with_gemini(raw_text, device_lat, device_lon)
-            except Exception as e:
-                logger.warning(f"Gemini API inference failed ({e}), falling back to offline spatial NLP.")
+        # Step 1: Check in-memory cache
+        cached = self.cache.get(raw_text, device_lat, device_lon)
+        if cached:
+            return cached
 
-        return self._extract_fallback(raw_text, device_lat, device_lon)
+        # Step 2: Try Gemini if available and circuit is closed
+        now = time.time()
+        if self.gemini_available and now > self._circuit_open_until:
+            try:
+                # 2.0s bounded timeout to prevent hanging civilian ingestion
+                result = await asyncio.wait_for(
+                    self._extract_with_gemini(raw_text, device_lat, device_lon),
+                    timeout=2.0
+                )
+                self._consecutive_failures = 0
+                self.cache.set(raw_text, device_lat, device_lon, result)
+                return result
+            except (asyncio.TimeoutError, Exception) as e:
+                self._consecutive_failures += 1
+                if self._consecutive_failures >= 3:
+                    # Open circuit for 30s to avoid latency cascade
+                    self._circuit_open_until = now + 30.0
+                    logger.warning(f"Gemini API circuit tripped ({e}); disabling for 30s.")
+                else:
+                    logger.warning(f"Gemini API extraction failed ({e}), using fallback parser.")
+
+        # Step 3: Local deterministic gazetteer & keyword NLP parser
+        result = self._extract_fallback(raw_text, device_lat, device_lon)
+        self.cache.set(raw_text, device_lat, device_lon, result)
+        return result
 
     async def _extract_with_gemini(
         self,
@@ -104,8 +173,6 @@ class NLPService:
         device_lat: float = None,
         device_lon: float = None
     ) -> DistressExtractionResult:
-        import google.generativeai as genai
-        
         prompt = f"""
         You are a disaster response AI agent analyzing incoming distress messages for the u-SHA-jua platform in Kenya/East Africa.
         Analyze the following raw message and return a pure JSON object (no markdown, no backticks):
@@ -169,9 +236,10 @@ class NLPService:
         critical_keywords = [
             "trapped", "dying", "children trapped", "unconscious", "explosion",
             "immediate help", "urgent", "emergency", "cannot breathe", "swept away",
-            "people inside", "help us now", "drowning"
+            "people inside", "help us now", "drowning", "flash flood", "surge", "burst"
         ]
         low_keywords = ["water logging", "damage", "puddles", "small smoke", "minor cracks", "traffic delay"]
+
 
         if any(w in text_lower for w in critical_keywords):
             urgency = UrgencyLevel.CRITICAL

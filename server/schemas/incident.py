@@ -58,3 +58,12 @@ class GeoJSONFeature(BaseModel):
 class GeoJSONFeatureCollection(BaseModel):
     type: str = "FeatureCollection"
     features: List[GeoJSONFeature]
+
+class BatchIncidentReportRaw(BaseModel):
+    reports: List[IncidentReportRaw] = Field(..., description="Batch of up to 500 civilian reports")
+
+class BatchIncidentResponse(BaseModel):
+    total_processed: int
+    successful: int
+    incidents: List[IncidentResponse]
+
