@@ -7,6 +7,20 @@
     font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   }
 
+  html.preferences-larger-text {
+    font-size: 112.5%;
+  }
+
+  html.preferences-reduced-motion,
+  html.preferences-reduced-motion *,
+  html.preferences-reduced-motion *::before,
+  html.preferences-reduced-motion *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
   body {
     background-color: #f4f6f5;
     color: #0f172a;

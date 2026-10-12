@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Activity, LogOut, MapPin, RefreshCw, Send } from 'lucide-react';
+import { Activity, LogOut, MapPin, RefreshCw, Send, Settings2 } from 'lucide-react';
 import { AuthUser, CivilianReportInput, Incident } from '../types';
 import { ReportModal } from './ReportModal';
+import { PreferencesPage } from './PreferencesPage';
+import { UserPreferences } from '../preferences';
 
 interface SurvivorPortalProps {
   user: AuthUser;
@@ -11,6 +13,12 @@ interface SurvivorPortalProps {
   onRefresh: () => void;
   onSignOut: () => void;
   onSubmitReport: (report: CivilianReportInput) => Promise<void>;
+  preferences: UserPreferences;
+  storageError: string | null;
+  hasMapboxKey: boolean;
+  hasOpenWeatherKey: boolean;
+  onChangePreference: <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => void;
+  onResetPreferences: () => void;
 }
 
 export const SurvivorPortal: React.FC<SurvivorPortalProps> = ({
@@ -21,8 +29,15 @@ export const SurvivorPortal: React.FC<SurvivorPortalProps> = ({
   onRefresh,
   onSignOut,
   onSubmitReport,
+  preferences,
+  storageError,
+  hasMapboxKey,
+  hasOpenWeatherKey,
+  onChangePreference,
+  onResetPreferences,
 }) => {
   const [reportOpen, setReportOpen] = useState(false);
+  const [showPreferences, setShowPreferences] = useState(false);
 
   return (
     <div className="min-h-screen bg-[#0B0F17] text-slate-100">
@@ -39,8 +54,17 @@ export const SurvivorPortal: React.FC<SurvivorPortalProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => setShowPreferences((current) => !current)}
+            aria-current={showPreferences ? 'page' : undefined}
+            className="flex min-h-11 items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
+          >
+            <Settings2 className="h-4 w-4" />
+            {showPreferences ? 'Your reports' : 'Preferences'}
+          </button>
+          <button
+            type="button"
             onClick={onRefresh}
-            disabled={loading}
+            disabled={loading || showPreferences}
             className="flex min-h-11 items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -57,6 +81,17 @@ export const SurvivorPortal: React.FC<SurvivorPortalProps> = ({
         </div>
       </header>
 
+      {showPreferences ? (
+        <PreferencesPage
+          role="survivor"
+          preferences={preferences}
+          storageError={storageError}
+          hasMapboxKey={hasMapboxKey}
+          hasOpenWeatherKey={hasOpenWeatherKey}
+          onChange={onChangePreference}
+          onReset={onResetPreferences}
+        />
+      ) : (
       <main className="mx-auto max-w-4xl px-4 py-8 sm:px-8">
         <section className="flex flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-6">
           <div>
@@ -118,6 +153,7 @@ export const SurvivorPortal: React.FC<SurvivorPortalProps> = ({
           )}
         </section>
       </main>
+      )}
 
       <ReportModal
         isOpen={reportOpen}

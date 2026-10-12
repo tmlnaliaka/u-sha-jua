@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, BellRing, LayoutDashboard, Map, RefreshCw } from 'lucide-react';
+import { AlertTriangle, BellRing, LayoutDashboard, Map, RefreshCw, Settings2 } from 'lucide-react';
 import { Incident, CivilianReportInput, IncidentStatus, AuthResponse, AuthUser, UserRole, HazardAlert, HazardFeedResponse } from './types';
 import { api } from './services/api';
 import { hasAccessToken, setAccessToken } from './services/api';
@@ -12,8 +12,10 @@ import { DispatchBoard } from './components/DispatchBoard';
 import { IncidentInspector } from './components/IncidentInspector';
 import { HazardAlertsPage, HazardAlertInspector } from './components/HazardAlertsPage';
 import { ReportModal } from './components/ReportModal';
+import { PreferencesPage } from './components/PreferencesPage';
+import { DEFAULT_PREFERENCES, preferenceStorageKey, loadUserPreferences, UserPreferences } from './preferences';
 
-type AdminView = 'overview' | 'map' | 'alerts' | 'incident';
+type AdminView = 'overview' | 'map' | 'alerts' | 'incident' | 'preferences';
 
 const NavButton: React.FC<{
   active: boolean;
@@ -41,8 +43,9 @@ export const App: React.FC = () => {
   const [selectedAlert, setSelectedAlert] = useState<HazardAlert | null>(null);
   const [activeView, setActiveView] = useState<AdminView>('overview');
   const [wsConnected, setWsConnected] = useState(false);
-  const [lowBandwidth, setLowBandwidth] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
+  const [preferencesReadyFor, setPreferencesReadyFor] = useState<string | null>(null);
+  const [preferenceStorageError, setPreferenceStorageError] = useState<string | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -52,9 +55,10 @@ export const App: React.FC = () => {
   const [hazardFeed, setHazardFeed] = useState<HazardFeedResponse | null>(null);
   const [hazardsLoading, setHazardsLoading] = useState(false);
   const [hazardError, setHazardError] = useState<string | null>(null);
+  const preferenceKey = currentUser ? preferenceStorageKey(currentUser.id, currentUser.role) : null;
 
   const playAlertSound = useCallback(() => {
-    if (!soundEnabled) return;
+    if (!preferences.soundAlerts) return;
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const osc = audioCtx.createOscillator();
@@ -71,7 +75,7 @@ export const App: React.FC = () => {
     } catch {
       // Audio playback can be blocked until the user interacts with the page.
     }
-  }, [soundEnabled]);
+  }, [preferences.soundAlerts]);
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -90,6 +94,38 @@ export const App: React.FC = () => {
       .finally(() => { if (active) setAuthLoading(false); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!preferenceKey || !currentUser) {
+      setPreferencesReadyFor(null);
+      setPreferences(DEFAULT_PREFERENCES);
+      setPreferenceStorageError(null);
+      return;
+    }
+
+    const result = loadUserPreferences(preferenceKey);
+    setPreferences(result.preferences);
+    setPreferenceStorageError(result.error);
+    setPreferencesReadyFor(preferenceKey);
+    if (currentUser.role === 'admin') setActiveView(result.preferences.defaultAdminView);
+  }, [currentUser?.role, preferenceKey]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('preferences-larger-text', Boolean(currentUser && preferences.largerText));
+    root.classList.toggle('preferences-reduced-motion', Boolean(currentUser && preferences.reducedMotion));
+  }, [currentUser, preferences.largerText, preferences.reducedMotion]);
+
+  useEffect(() => {
+    if (!preferenceKey || preferencesReadyFor !== preferenceKey) return;
+    try {
+      window.localStorage.setItem(preferenceKey, JSON.stringify(preferences));
+      setPreferenceStorageError(null);
+    } catch (error) {
+      console.error('Failed to save user preferences', error);
+      setPreferenceStorageError('Browser storage is unavailable; changes apply for this session only.');
+    }
+  }, [preferenceKey, preferences, preferencesReadyFor]);
 
   const loadIncidents = useCallback(async () => {
     setIncidentsLoading(true);
@@ -136,9 +172,9 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (currentUser?.role !== 'admin') return;
     loadHazards();
-    const refresh = window.setInterval(loadHazards, 5 * 60 * 1000);
+    const refresh = window.setInterval(loadHazards, preferences.alertRefreshMinutes * 60 * 1000);
     return () => window.clearInterval(refresh);
-  }, [currentUser?.role, loadHazards]);
+  }, [currentUser?.role, loadHazards, preferences.alertRefreshMinutes]);
 
   useEffect(() => {
     if (currentUser?.role !== 'admin') {
@@ -175,6 +211,12 @@ export const App: React.FC = () => {
     setIncidents([]);
     setIncidentError(null);
   };
+
+  const updatePreference = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
+    setPreferences((current) => ({ ...current, [key]: value }));
+  };
+
+  const resetPreferences = () => setPreferences(DEFAULT_PREFERENCES);
 
   const handleAuthSubmit = (values: {
     mode: 'login' | 'register';
@@ -258,6 +300,12 @@ export const App: React.FC = () => {
         onRefresh={loadIncidents}
         onSignOut={handleSignOut}
         onSubmitReport={handleSubmitReport}
+        preferences={preferences}
+        storageError={preferenceStorageError}
+        hasMapboxKey={Boolean(import.meta.env.VITE_MAPBOX_ACCESS_TOKEN)}
+        hasOpenWeatherKey={Boolean(import.meta.env.VITE_OPENWEATHER_API_KEY)}
+        onChangePreference={updatePreference}
+        onResetPreferences={resetPreferences}
       />
     );
   }
@@ -266,11 +314,11 @@ export const App: React.FC = () => {
     <div className="flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[#f4f6f5] text-slate-900">
       <Header
         connected={wsConnected}
-        lowBandwidth={lowBandwidth}
-        onToggleLowBandwidth={() => setLowBandwidth((current) => !current)}
+        lowBandwidth={preferences.lowBandwidth}
+        onToggleLowBandwidth={() => updatePreference('lowBandwidth', !preferences.lowBandwidth)}
         onOpenReportModal={() => setIsReportModalOpen(true)}
-        soundEnabled={soundEnabled}
-        onToggleSound={() => setSoundEnabled((current) => !current)}
+        soundEnabled={preferences.soundAlerts}
+        onToggleSound={() => updatePreference('soundAlerts', !preferences.soundAlerts)}
         criticalCount={criticalCount}
         userName={currentUser.display_name}
         onSignOut={handleSignOut}
@@ -280,6 +328,7 @@ export const App: React.FC = () => {
         <NavButton active={activeView === 'overview'} onClick={() => setActiveView('overview')} label="Overview" mobileLabel="Overview"><LayoutDashboard className="h-4 w-4" /></NavButton>
         <NavButton active={activeView === 'map'} onClick={() => setActiveView('map')} label="Incident map" mobileLabel="Map"><Map className="h-4 w-4" /></NavButton>
         <NavButton active={activeView === 'alerts'} onClick={() => setActiveView('alerts')} label="Public alerts" mobileLabel="Alerts"><BellRing className="h-4 w-4" /><span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] tabular-nums">{activeAlerts.length}</span></NavButton>
+        <NavButton active={activeView === 'preferences'} onClick={() => setActiveView('preferences')} label="Preferences" mobileLabel="Settings"><Settings2 className="h-4 w-4" /></NavButton>
       </nav>
 
       {activeView === 'overview' && (
@@ -360,7 +409,12 @@ export const App: React.FC = () => {
               selectedAlert={selectedAlert}
               onSelectIncident={selectIncident}
               onSelectAlert={selectAlert}
-              lowBandwidth={lowBandwidth}
+              lowBandwidth={preferences.lowBandwidth}
+              satelliteView={preferences.mapSatellite}
+              weatherLayer={preferences.weatherLayer}
+              reducedMotion={preferences.reducedMotion}
+              onChangeSatellite={(value) => updatePreference('mapSatellite', value)}
+              onChangeWeatherLayer={(value) => updatePreference('weatherLayer', value)}
             />
           </section>
           <div className="h-[46vh] min-h-[320px] w-full shrink-0 border-t border-slate-300 md:h-full md:w-[390px] md:border-l md:border-t-0">
@@ -398,6 +452,20 @@ export const App: React.FC = () => {
               if (alert) selectAlert(alert);
               setActiveView('map');
             }}
+          />
+        </div>
+      )}
+
+      {activeView === 'preferences' && (
+        <div className="min-h-0 flex-1">
+          <PreferencesPage
+            role="admin"
+            preferences={preferences}
+            storageError={preferenceStorageError}
+            hasMapboxKey={Boolean(import.meta.env.VITE_MAPBOX_ACCESS_TOKEN)}
+            hasOpenWeatherKey={Boolean(import.meta.env.VITE_OPENWEATHER_API_KEY)}
+            onChange={updatePreference}
+            onReset={resetPreferences}
           />
         </div>
       )}

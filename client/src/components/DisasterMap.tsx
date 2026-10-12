@@ -3,6 +3,7 @@ import { CircleMarker, MapContainer, Marker, TileLayer, Tooltip, useMap } from '
 import L from 'leaflet';
 import { Layers2, Satellite } from 'lucide-react';
 import { HazardAlert, Incident } from '../types';
+import { WeatherLayer } from '../preferences';
 
 interface DisasterMapProps {
   incidents: Incident[];
@@ -12,18 +13,31 @@ interface DisasterMapProps {
   onSelectIncident: (incident: Incident) => void;
   onSelectAlert: (alert: HazardAlert) => void;
   lowBandwidth: boolean;
+  satelliteView: boolean;
+  weatherLayer: WeatherLayer;
+  reducedMotion: boolean;
+  onChangeSatellite: (enabled: boolean) => void;
+  onChangeWeatherLayer: (layer: WeatherLayer) => void;
 }
 
-const MapController: React.FC<{ selectedIncident: Incident | null; selectedAlert: HazardAlert | null }> = ({
+const MapController: React.FC<{
+  selectedIncident: Incident | null;
+  selectedAlert: HazardAlert | null;
+  reducedMotion: boolean;
+}> = ({
   selectedIncident,
   selectedAlert,
+  reducedMotion,
 }) => {
   const map = useMap();
 
   useEffect(() => {
     const coordinates = selectedIncident?.coordinates ?? selectedAlert?.coordinates;
-    if (coordinates) map.flyTo([coordinates.latitude, coordinates.longitude], 12, { duration: 0.8 });
-  }, [map, selectedAlert, selectedIncident]);
+    if (!coordinates) return;
+    const target: [number, number] = [coordinates.latitude, coordinates.longitude];
+    if (reducedMotion) map.setView(target, 12, { animate: false });
+    else map.flyTo(target, 12, { duration: 0.8 });
+  }, [map, reducedMotion, selectedAlert, selectedIncident]);
 
   useEffect(() => {
     const container = map.getContainer();
@@ -57,9 +71,12 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
   onSelectIncident,
   onSelectAlert,
   lowBandwidth,
+  satelliteView,
+  weatherLayer,
+  reducedMotion,
+  onChangeSatellite,
+  onChangeWeatherLayer,
 }) => {
-  const [satelliteView, setSatelliteView] = useState(false);
-  const [weatherLayer, setWeatherLayer] = useState('');
   const defaultPosition: [number, number] = [-0.0236, 37.9062];
   const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
   const openWeatherApiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
@@ -68,7 +85,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
   return (
     <div className="relative h-full w-full overflow-hidden bg-slate-200">
       <MapContainer center={defaultPosition} zoom={6} minZoom={4} scrollWheelZoom className="h-full w-full">
-        <MapController selectedIncident={selectedIncident} selectedAlert={selectedAlert} />
+        <MapController selectedIncident={selectedIncident} selectedAlert={selectedAlert} reducedMotion={reducedMotion} />
         <TileLayer
           attribution={useMapbox
             ? '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -148,7 +165,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
           <select
             aria-label="Weather map layer"
             value={weatherLayer}
-            onChange={(event) => setWeatherLayer(event.target.value)}
+            onChange={(event) => onChangeWeatherLayer(event.target.value as WeatherLayer)}
             disabled={!openWeatherApiKey || lowBandwidth}
             className="max-w-36 rounded border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
             title={!openWeatherApiKey ? 'Set VITE_OPENWEATHER_API_KEY to enable weather layers' : undefined}
@@ -163,7 +180,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
         </label>
         <button
           type="button"
-          onClick={() => setSatelliteView((current) => !current)}
+          onClick={() => onChangeSatellite(!satelliteView)}
           disabled={!mapboxToken || lowBandwidth}
           aria-pressed={useMapbox}
           title={!mapboxToken ? 'Set VITE_MAPBOX_ACCESS_TOKEN to enable optional satellite context' : 'Satellite imagery is not live incident evidence'}
