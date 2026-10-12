@@ -10,7 +10,7 @@
 
 ---
 
-## 1. System Architecture
+## 1. Full System Architecture
 
 ```mermaid
 flowchart TD
