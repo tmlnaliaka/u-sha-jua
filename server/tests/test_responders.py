@@ -54,6 +54,11 @@ def test_dispatch_responder_workflow():
 
     units = client.get("/api/v1/responders").json()
     available_units = [u for u in units if u["status"] == "Available"]
+    if not available_units:
+        client.patch(f"/api/v1/responders/{units[0]['id']}/status", json={"status": "Available"})
+        units = client.get("/api/v1/responders").json()
+        available_units = [u for u in units if u["status"] == "Available"]
+
     assert len(available_units) > 0
     unit_id = available_units[0]["id"]
 

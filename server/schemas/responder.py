@@ -1,5 +1,5 @@
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from models.responder import ResponderType, ResponderStatus
 
 class ResponderCoordinate(BaseModel):
@@ -7,6 +7,8 @@ class ResponderCoordinate(BaseModel):
     longitude: float
 
 class ResponderUnitResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     callsign: str
     unit_type: ResponderType

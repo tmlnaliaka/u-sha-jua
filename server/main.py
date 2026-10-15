@@ -11,11 +11,14 @@ from routers import (
     sms_router,
     responders_router,
     weather_router,
-    analytics_router
+    analytics_router,
+    shelters_router
 )
 from routers.responders import seed_responder_fleet
+from routers.shelters import seed_shelters
 from services.spatial_index import spatial_grid, spatial_cache
 from services.websocket_manager import ws_manager
+from services.audit_service import audit_service
 import uuid
 from datetime import datetime, timezone
 
@@ -104,10 +107,11 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     seed_initial_incidents()
     
-    # Warm up in-memory spatial grid index from persistence layer & seed fleet
+    # Warm up in-memory spatial grid index from persistence layer & seed fleet & shelters
     db = SessionLocal()
     try:
         seed_responder_fleet(db)
+        seed_shelters(db)
         active_incidents = db.query(Incident).all()
         for inc in active_incidents:
             spatial_grid.add_or_update(inc.to_dict())
@@ -119,7 +123,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="u-SHA-jua Disaster Informatics Platform",
     description="Resilient Asynchronous Geospatial Disaster Intelligence & Emergency Dispatch System",
-    version="1.2.0-tactical",
+    version="1.3.0-enterprise",
     lifespan=lifespan
 )
 
@@ -140,15 +144,20 @@ app.include_router(sms_router, prefix=settings.API_V1_PREFIX)
 app.include_router(responders_router, prefix=settings.API_V1_PREFIX)
 app.include_router(weather_router, prefix=settings.API_V1_PREFIX)
 app.include_router(analytics_router, prefix=settings.API_V1_PREFIX)
+app.include_router(shelters_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws_router)
 
 
 @app.get("/health", tags=["Health"])
 def health_check():
+    integrity = audit_service.verify_integrity()
     return {
         "status": "healthy",
-        "service": "u-SHA-jua Backend API",
-        "version": "1.1.0-scaled",
+        "service": "u-SHA-jua Sovereign Backend API",
+        "version": "1.3.0-enterprise",
+        "security_mode": "strict" if settings.ENFORCE_STRICT_AUTH else "development_authenticated",
+        "audit_ledger_blocks": integrity.get("total_blocks", 0),
+        "audit_chain_verified": integrity.get("valid", False),
         "spatial_grid_items": spatial_grid.size(),
         "active_ws_connections": ws_manager.active_count,
         "timestamp": datetime.now(timezone.utc).isoformat()

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Incident, IncidentStatus, IncidentType } from '../types';
-import { Search, Send, CheckCircle2, MapPin, AlertOctagon, Flame, Waves, Building2 } from 'lucide-react';
+import { Search, Send, CheckCircle2, MapPin, AlertOctagon, Flame, Waves, Building2, Zap } from 'lucide-react';
+import { api } from '../services/api';
 
 interface DispatchBoardProps {
   incidents: Incident[];
@@ -180,14 +181,31 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
 
                   <div className="flex items-center space-x-1.5" onClick={(e) => e.stopPropagation()}>
                     {incident.status === 'Pending' && (
-                      <button
-                        onClick={() => onUpdateStatus(incident.id, 'Dispatched')}
-                        className="flex items-center space-x-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-medium transition shadow-sm"
-                        title="Dispatch First Responder Units"
-                      >
-                        <Send className="w-3 h-3" />
-                        <span>Dispatch</span>
-                      </button>
+                      <>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.autoDispatchResponder(incident.id);
+                            } catch (err) {
+                              onUpdateStatus(incident.id, 'Dispatched');
+                            }
+                          }}
+                          className="flex items-center space-x-1 px-2 py-1 rounded bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-[11px] font-bold transition shadow-sm"
+                          title="Execute AI Autonomous Dispatch to Highest Scored Unit"
+                        >
+                          <Zap className="w-3 h-3 fill-current text-amber-200" />
+                          <span>Auto</span>
+                        </button>
+
+                        <button
+                          onClick={() => onUpdateStatus(incident.id, 'Dispatched')}
+                          className="flex items-center space-x-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-medium transition shadow-sm"
+                          title="Dispatch First Responder Units"
+                        >
+                          <Send className="w-3 h-3" />
+                          <span>Dispatch</span>
+                        </button>
+                      </>
                     )}
 
                     {incident.status === 'Dispatched' && (

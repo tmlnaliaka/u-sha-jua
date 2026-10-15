@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   Radio, Wifi, WifiOff, AlertTriangle, Plus, Volume2, VolumeX, 
-  ShieldAlert, Zap, BarChart3, Smartphone, LifeBuoy
+  ShieldAlert, Zap, BarChart3, Smartphone, LifeBuoy, ShieldCheck
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -13,6 +13,7 @@ interface HeaderProps {
   onOpenCivilianPortal: () => void;
   onOpenAnalyticsModal: () => void;
   onOpenResponderPwa: () => void;
+  onOpenCommandCenter: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   criticalCount: number;
@@ -27,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCivilianPortal,
   onOpenAnalyticsModal,
   onOpenResponderPwa,
+  onOpenCommandCenter,
   soundEnabled,
   onToggleSound,
   criticalCount,
@@ -93,6 +95,16 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
           <span className="hidden md:inline">ANALYTICS</span>
+        </button>
+
+        {/* Enterprise Command & Security Suite */}
+        <button
+          onClick={onOpenCommandCenter}
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/40 border border-cyan-500/50 text-cyan-300 hover:text-white text-xs font-bold transition shadow-sm"
+          title="Open Enterprise Tactical Suite (Shelters, AI Auto-Dispatch, Cryptographic Ledger, Mesh)"
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+          <span className="hidden lg:inline">COMMAND & SEC</span>
         </button>
 
         {/* Low-Bandwidth Mode Switcher */}

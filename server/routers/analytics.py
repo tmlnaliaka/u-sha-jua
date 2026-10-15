@@ -1,11 +1,12 @@
 import io
 import csv
-from typing import Dict, Any
-from fastapi import APIRouter, Depends, Response
+from typing import Dict, Any, List
+from fastapi import APIRouter, Depends, Response, Query
 from sqlalchemy.orm import Session
 from database import get_db
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
 from models.responder import ResponderUnit, ResponderStatus
+from services.audit_service import audit_service
 
 router = APIRouter(prefix="/analytics", tags=["Spatial Analytics"])
 
@@ -103,3 +104,20 @@ def export_incidents_csv(db: Session = Depends(get_db)):
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="ushajua_disaster_incidents.csv"'}
     )
+
+@router.get("/audit-log")
+def get_audit_trail(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0)
+):
+    """Retrieves immutable SHA-256 tamper-evident operational audit trail."""
+    return {
+        "total_returned": limit,
+        "offset": offset,
+        "entries": audit_service.get_entries(limit=limit, offset=offset)
+    }
+
+@router.get("/audit-log/verify")
+def verify_audit_trail_integrity():
+    """Cryptographically verifies that no historical audit block has been altered or forged."""
+    return audit_service.verify_integrity()

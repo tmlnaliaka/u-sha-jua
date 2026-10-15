@@ -1,11 +1,14 @@
 import uuid
+import math
 import asyncio
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Response
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Response, Request
 from sqlalchemy.orm import Session
 from database import get_db
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
 from models.responder import ResponderUnit
+from models.shelter import Shelter
 from schemas.incident import (
     IncidentReportRaw,
     IncidentCreate,
@@ -13,33 +16,49 @@ from schemas.incident import (
     IncidentStatusUpdate,
     GeoJSONFeatureCollection,
     BatchIncidentReportRaw,
-    BatchIncidentResponse
+    BatchIncidentResponse,
+    OfflinePacketSyncRequest
 )
 from services.nlp_service import nlp_service
 from services.websocket_manager import ws_manager
 from services.spatial_index import spatial_grid, spatial_cache
+from services.security import (
+    check_rate_limit,
+    verify_api_key,
+    ROLE_DISPATCHER,
+    ROLE_ADMIN,
+    mask_pii,
+    sanitize_input
+)
+from services.audit_service import audit_service
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
 @router.post("/report", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
 async def report_civilian_incident(
     report: IncidentReportRaw,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
     Ingests raw civilian distress reports (SMS / Web Distress), runs NLP extraction,
     writes coordinates to spatial database, updates in-memory spatial index,
     invalidates viewport cache, and broadcasts updates to emergency dispatchers.
+    Protected by rate-limiting (60 req/min per IP) and PII masking.
     """
+    check_rate_limit(request, max_requests=60, window_seconds=60.0)
+
+    clean_text = sanitize_input(report.raw_text, max_len=4000)
+
     extraction = await nlp_service.extract_distress_report(
-        raw_text=report.raw_text,
+        raw_text=clean_text,
         device_lat=report.device_lat,
         device_lon=report.device_lon
     )
 
     incident = Incident(
         id=str(uuid.uuid4()),
-        raw_text=report.raw_text,
+        raw_text=clean_text,
         incident_type=extraction.incident_type,
         urgency_level=extraction.urgency_level,
         location_name=extraction.location_name,
@@ -58,40 +77,61 @@ async def report_civilian_incident(
     spatial_grid.add_or_update(inc_dict)
     spatial_cache.invalidate_all()
 
-    # Broadcast real-time update
-    await ws_manager.broadcast("incident_reported", inc_dict)
+    # Log event in cryptographic audit ledger
+    audit_service.log_event(
+        action="INCIDENT_REPORTED",
+        actor="Civilian/Web",
+        details={
+            "incident_id": incident.id,
+            "type": inc_dict["incident_type"],
+            "urgency": inc_dict["urgency_level"],
+            "location": incident.location_name
+        }
+    )
+
+    # Broadcast real-time update with PII masked for privacy safety
+    inc_broadcast = dict(inc_dict)
+    inc_broadcast["raw_text"] = mask_pii(inc_dict["raw_text"])
+    await ws_manager.broadcast("incident_reported", inc_broadcast)
 
     return inc_dict
 
 @router.post("/batch-report", response_model=BatchIncidentResponse, status_code=status.HTTP_201_CREATED)
 async def batch_report_civilian_incidents(
     batch: BatchIncidentReportRaw,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
     High-throughput batch ingestion endpoint for telecom SMS aggregators (e.g. Africa's Talking)
     and emergency command relays. Runs NLP extraction concurrently in parallel workers.
+    Protected by rate limiting.
     """
+    check_rate_limit(request, max_requests=120, window_seconds=60.0)
+
     if not batch.reports:
         return BatchIncidentResponse(total_processed=0, successful=0, incidents=[])
 
-    # Concurrent asynchronous NLP extractions
+    clean_reports = []
+    for rep in batch.reports:
+        rep.raw_text = sanitize_input(rep.raw_text, max_len=4000)
+        clean_reports.append(rep)
+
     tasks = [
         nlp_service.extract_distress_report(
             raw_text=rep.raw_text,
             device_lat=rep.device_lat,
             device_lon=rep.device_lon
         )
-        for rep in batch.reports
+        for rep in clean_reports
     ]
     extractions = await asyncio.gather(*tasks, return_exceptions=True)
 
     created_models = []
     created_dicts = []
 
-    for rep, ext in zip(batch.reports, extractions):
+    for rep, ext in zip(clean_reports, extractions):
         if isinstance(ext, Exception):
-            # Fallback in case of individual task failure
             ext = nlp_service._extract_fallback(rep.raw_text, rep.device_lat, rep.device_lon)
 
         inc = Incident(
@@ -106,7 +146,6 @@ async def batch_report_civilian_incidents(
         )
         created_models.append(inc)
 
-    # Atomic batch insert
     db.add_all(created_models)
     db.commit()
 
@@ -118,7 +157,12 @@ async def batch_report_civilian_incidents(
 
     spatial_cache.invalidate_all()
 
-    # Broadcast batch event
+    audit_service.log_event(
+        action="BATCH_INCIDENTS_REPORTED",
+        actor="Telecom/Aggregator",
+        details={"count": len(created_dicts)}
+    )
+
     await ws_manager.broadcast("batch_incidents_reported", {
         "count": len(created_dicts),
         "sample": created_dicts[:3]
@@ -133,15 +177,16 @@ async def batch_report_civilian_incidents(
 @router.post("", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
 async def create_incident(
     incident_in: IncidentCreate,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
     db: Session = Depends(get_db)
 ):
-    """Manual direct dispatch creation endpoint."""
+    """Manual direct dispatch creation endpoint (requires Dispatcher or Admin role)."""
     incident = Incident(
         id=str(uuid.uuid4()),
-        raw_text=incident_in.raw_text,
+        raw_text=sanitize_input(incident_in.raw_text),
         incident_type=incident_in.incident_type,
         urgency_level=incident_in.urgency_level,
-        location_name=incident_in.location_name,
+        location_name=sanitize_input(incident_in.location_name, max_len=255),
         latitude=incident_in.coordinates.latitude,
         longitude=incident_in.coordinates.longitude,
         status=incident_in.status or IncidentStatus.PENDING
@@ -153,6 +198,12 @@ async def create_incident(
     inc_dict = incident.to_dict()
     spatial_grid.add_or_update(inc_dict)
     spatial_cache.invalidate_all()
+
+    audit_service.log_event(
+        action="MANUAL_INCIDENT_CREATED",
+        actor=role,
+        details={"incident_id": incident.id, "type": str(incident.incident_type), "location": incident.location_name}
+    )
 
     await ws_manager.broadcast("incident_created", inc_dict)
     return inc_dict
@@ -258,7 +309,6 @@ def get_spatial_feed(
     incidents = query.all()
     features = [inc.to_geojson_feature() for inc in incidents]
 
-    # Populate in-memory grid from query results
     for inc in incidents:
         spatial_grid.add_or_update(inc.to_dict())
 
@@ -307,6 +357,157 @@ def track_civilian_incident(incident_id: str, db: Session = Depends(get_db)):
         "stages": stages
     }
 
+@router.get("/{incident_id}/hazard-perimeter")
+def get_incident_hazard_perimeter(incident_id: str, db: Session = Depends(get_db)):
+    """
+    Computes dynamic GeoJSON hazard perimeter polygon, estimated population at risk,
+    and nearest open evacuation shelter for early-warning threat modeling.
+    """
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    urgency_val = incident.urgency_level.value if hasattr(incident.urgency_level, "value") else str(incident.urgency_level)
+    type_val = incident.incident_type.value if hasattr(incident.incident_type, "value") else str(incident.incident_type)
+
+    # Calculate dynamic hazard radius in meters and degrees (~111,000m per degree latitude)
+    if urgency_val == "Critical":
+        radius_m = 950.0 if type_val == "Flood" else (700.0 if type_val == "Fire" else 500.0)
+    elif urgency_val == "Medium":
+        radius_m = 400.0
+    else:
+        radius_m = 200.0
+
+    radius_deg_lat = radius_m / 111320.0
+    radius_deg_lon = radius_m / (111320.0 * math.cos(math.radians(incident.latitude)))
+
+    # Generate 16-point circular polygon
+    coordinates = []
+    points = 16
+    for i in range(points + 1):
+        angle = (2.0 * math.pi * i) / points
+        lat_pt = incident.latitude + (radius_deg_lat * math.sin(angle))
+        lon_pt = incident.longitude + (radius_deg_lon * math.cos(angle))
+        coordinates.append([round(lon_pt, 6), round(lat_pt, 6)])
+
+    # Population density estimate (~18 people per 100m² in high-density informal settlement)
+    area_sq_m = math.pi * (radius_m ** 2)
+    estimated_pop = int((area_sq_m / 10000.0) * 850)
+
+    # Find nearest active evacuation shelter
+    shelters = db.query(Shelter).filter(Shelter.is_active == True).all()
+    nearest_shelter = None
+    min_dist = float("inf")
+    for s in shelters:
+        # Haversine
+        dlat = math.radians(s.latitude - incident.latitude)
+        dlon = math.radians(s.longitude - incident.longitude)
+        a = math.sin(dlat / 2.0)**2 + math.cos(math.radians(incident.latitude)) * math.cos(math.radians(s.latitude)) * math.sin(dlon / 2.0)**2
+        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+        dist_km = 6371.0 * c
+        if dist_km < min_dist:
+            min_dist = dist_km
+            nearest_shelter = s.to_dict()
+            nearest_shelter["distance_km"] = round(dist_km, 2)
+
+    return {
+        "type": "Feature",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [coordinates]
+        },
+        "properties": {
+            "incident_id": incident.id,
+            "location_name": incident.location_name,
+            "incident_type": type_val,
+            "urgency_level": urgency_val,
+            "radius_meters": radius_m,
+            "area_sq_meters": round(area_sq_m, 1),
+            "estimated_population_impacted": estimated_pop,
+            "nearest_evacuation_shelter": nearest_shelter,
+            "evacuation_advisory": (
+                f"IMMEDIATE EVACUATION: Establish {int(radius_m)}m cordon around {incident.location_name}. "
+                f"Direct civilian foot traffic toward {nearest_shelter['name'] if nearest_shelter else 'designated high grounds'}."
+            )
+        }
+    }
+
+@router.post("/sync/offline-packet")
+async def sync_offline_distress_packet(
+    packet: OfflinePacketSyncRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Offline Emergency Mesh Synchronizer:
+    Ingests incident distress packets collected by field workers during cellular blackouts
+    via LoRa, ad-hoc Wi-Fi, or Bluetooth mesh. Deduplicates and merges state.
+    """
+    ingested = 0
+    updated = 0
+    new_incidents = []
+
+    for item in packet.incidents:
+        inc_id = item.id or str(uuid.uuid4())
+        existing = db.query(Incident).filter(Incident.id == inc_id).first()
+        if existing:
+            # Already exists in ledger
+            updated += 1
+            continue
+
+        ts = datetime.fromisoformat(item.timestamp) if item.timestamp else datetime.now(timezone.utc)
+        new_inc = Incident(
+            id=inc_id,
+            raw_text=sanitize_input(item.raw_text),
+            incident_type=item.incident_type,
+            urgency_level=item.urgency_level,
+            location_name=sanitize_input(item.location_name),
+            latitude=item.latitude,
+            longitude=item.longitude,
+            status=IncidentStatus.PENDING,
+            timestamp=ts
+        )
+        new_incidents.append(new_inc)
+        ingested += 1
+
+    if new_incidents:
+        db.add_all(new_incidents)
+        db.commit()
+        for inc in new_incidents:
+            db.refresh(inc)
+            d = inc.to_dict()
+            spatial_grid.add_or_update(d)
+        spatial_cache.invalidate_all()
+
+    audit_service.log_event(
+        action="OFFLINE_PACKET_SYNCED",
+        actor=f"MeshNode/{packet.device_id}",
+        details={"ingested_count": ingested, "packet_ts": packet.packet_timestamp}
+    )
+
+    return {
+        "status": "synchronized",
+        "device_id": packet.device_id,
+        "newly_ingested": ingested,
+        "already_synced": updated
+    }
+
+@router.get("/export/offline-bundle")
+def export_offline_crisis_bundle(db: Session = Depends(get_db)):
+    """
+    Generates a portable, high-density JSON offline bundle containing all active incidents,
+    designated evacuation shelters, and high-hazard flood polygons for disconnected field tablets.
+    """
+    incidents = db.query(Incident).filter(Incident.status != IncidentStatus.RESOLVED).all()
+    shelters = db.query(Shelter).filter(Shelter.is_active == True).all()
+
+    return {
+        "bundle_version": "1.3.0-mesh",
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "active_incidents": [i.to_dict() for i in incidents],
+        "shelters": [s.to_dict() for s in shelters],
+        "security_checksum": audit_service.verify_integrity().get("latest_hash")
+    }
+
 @router.get("/{incident_id}", response_model=IncidentResponse)
 def get_incident(incident_id: str, db: Session = Depends(get_db)):
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
@@ -318,13 +519,15 @@ def get_incident(incident_id: str, db: Session = Depends(get_db)):
 async def update_incident_status(
     incident_id: str,
     update: IncidentStatusUpdate,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
     db: Session = Depends(get_db)
 ):
-    """Updates operational triage status (Pending -> Dispatched -> Resolved)."""
+    """Updates operational triage status (Pending -> Dispatched -> Resolved). Requires authorized role."""
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
+    old_status = incident.status
     incident.status = update.status
     db.commit()
     db.refresh(incident)
@@ -333,21 +536,39 @@ async def update_incident_status(
     spatial_grid.add_or_update(inc_dict)
     spatial_cache.invalidate_all()
 
-    # Broadcast status change to live dispatch boards
+    audit_service.log_event(
+        action="INCIDENT_STATUS_CHANGED",
+        actor=role,
+        details={"incident_id": incident.id, "old": str(old_status), "new": str(update.status)}
+    )
+
     await ws_manager.broadcast("status_updated", inc_dict)
 
     return inc_dict
 
 @router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_incident(incident_id: str, db: Session = Depends(get_db)):
+async def delete_incident(
+    incident_id: str,
+    role: str = Depends(verify_api_key([ROLE_ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """Deletes an incident from the ledger. Requires Admin role and logs to audit trail."""
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
+
+    inc_info = {"id": incident.id, "location": incident.location_name}
     db.delete(incident)
     db.commit()
 
     spatial_grid.remove(incident_id)
     spatial_cache.invalidate_all()
+
+    audit_service.log_event(
+        action="INCIDENT_DELETED",
+        actor=role,
+        details=inc_info
+    )
 
     await ws_manager.broadcast("incident_deleted", {"id": incident_id})
     return None

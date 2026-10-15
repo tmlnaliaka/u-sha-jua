@@ -1,13 +1,16 @@
 import uuid
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, Request, status, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
+from config import settings
 from models.incident import Incident, IncidentStatus
 from services.nlp_service import nlp_service
 from services.websocket_manager import ws_manager
 from services.spatial_index import spatial_grid, spatial_cache
+from services.security import check_rate_limit, mask_pii, sanitize_input
+from services.audit_service import audit_service
 
 logger = logging.getLogger("sms_router")
 router = APIRouter(prefix="/sms", tags=["Telecom SMS Gateway"])
@@ -20,8 +23,18 @@ async def incoming_sms_webhook(
     """
     High-availability webhook for Africa's Talking / Twilio incoming civilian SMS.
     Accepts both form-encoded and JSON webhook payloads.
+    Includes carrier secret validation, rate limiting, and PII masking.
     Responds with HTTP 200 within <50ms to satisfy telecom carrier gateway SLA.
     """
+    # Rate limit telecom endpoint (up to 300 requests/minute per carrier IP)
+    check_rate_limit(request, max_requests=300, window_seconds=60.0)
+
+    # If webhook secret is configured, enforce verification
+    if settings.SMS_WEBHOOK_SECRET:
+        secret_header = request.headers.get("X-Webhook-Secret") or request.query_params.get("secret")
+        if secret_header != settings.SMS_WEBHOOK_SECRET:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature")
+
     raw_text = ""
     sender_phone = None
 
@@ -35,15 +48,17 @@ async def incoming_sms_webhook(
         raw_text = form.get("text") or form.get("message") or ""
         sender_phone = form.get("from") or form.get("phoneNumber") or None
 
-    if not raw_text or len(raw_text.strip()) < 3:
+    clean_text = sanitize_input(raw_text, max_len=1000)
+
+    if not clean_text or len(clean_text.strip()) < 3:
         return {"status": "ignored", "reason": "empty or invalid message"}
 
     # Run fast-path NLP extraction
-    extraction = await nlp_service.extract_distress_report(raw_text=raw_text)
+    extraction = await nlp_service.extract_distress_report(raw_text=clean_text)
 
     incident = Incident(
         id=str(uuid.uuid4()),
-        raw_text=raw_text,
+        raw_text=clean_text,
         incident_type=extraction.incident_type,
         urgency_level=extraction.urgency_level,
         location_name=extraction.location_name,
@@ -60,10 +75,26 @@ async def incoming_sms_webhook(
     spatial_grid.add_or_update(inc_dict)
     spatial_cache.invalidate_all()
 
-    # Real-time WebSocket push
-    await ws_manager.broadcast("incident_reported", inc_dict)
+    # Log to cryptographic audit trail
+    masked_phone = mask_pii(sender_phone) if sender_phone else "Unknown"
+    audit_service.log_event(
+        action="SMS_INCIDENT_INGESTED",
+        actor="Telecom/SMS",
+        details={
+            "incident_id": incident.id,
+            "sender": masked_phone,
+            "type": inc_dict["incident_type"],
+            "urgency": inc_dict["urgency_level"],
+            "location": incident.location_name
+        }
+    )
 
-    logger.info(f"Ingested incoming SMS from {sender_phone}: {raw_text[:40]}...")
+    # Real-time WebSocket push with PII masking
+    broadcast_payload = dict(inc_dict)
+    broadcast_payload["raw_text"] = mask_pii(clean_text)
+    await ws_manager.broadcast("incident_reported", broadcast_payload)
+
+    logger.info(f"Ingested incoming SMS from {masked_phone}: {clean_text[:40]}...")
 
     return {
         "status": "success",
