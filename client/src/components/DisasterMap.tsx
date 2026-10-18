@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, Polygon, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Incident, IncidentStatus, ResponderUnit, ActiveRoute, FloodZoneFeature, WeatherTelemetry } from '../types';
-import { ShieldCheck, Send, Navigation, CloudRain, Flame, Layers, Eye, EyeOff, Waves, AlertTriangle } from 'lucide-react';
+import { Incident, IncidentStatus, ResponderUnit, ActiveRoute, FloodZoneFeature, WeatherTelemetry, Shelter, HazardPerimeterFeature } from '../types';
+import { ShieldCheck, Send, Navigation, CloudRain, Flame, Layers, Eye, EyeOff, Waves, AlertTriangle, Home, Globe } from 'lucide-react';
 import { api } from '../services/api';
 
 interface DisasterMapProps {
@@ -93,6 +93,25 @@ const createResponderMarker = (unit: ResponderUnit) => {
   });
 };
 
+const createShelterMarker = (shelter: Shelter) => {
+  const isCrowded = shelter.occupancy_percent > 85;
+  const color = isCrowded ? '#ef4444' : shelter.occupancy_percent > 60 ? '#f59e0b' : '#10b981';
+
+  const html = `
+    <div style="position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: #0b111e; border: 2px solid ${color}; border-radius: 8px; box-shadow: 0 0 10px ${color}66;">
+      <span style="font-size: 13px;">🏠</span>
+    </div>
+  `;
+
+  return L.divIcon({
+    className: 'custom-shelter-marker',
+    html,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+  });
+};
+
 export const DisasterMap: React.FC<DisasterMapProps> = ({
   incidents,
   selectedIncident,
@@ -109,18 +128,23 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
   // Layer Toggles
   const [showHeatmap, setShowHeatmap] = useState<boolean>(true);
   const [showWeatherRadar, setShowWeatherRadar] = useState<boolean>(true);
+  const [showShelters, setShowShelters] = useState<boolean>(true);
+  const [basemapMode, setBasemapMode] = useState<'tactical' | 'satellite' | 'streets'>('tactical');
   
   // Weather & Flood Zones state
   const [floodZones, setFloodZones] = useState<FloodZoneFeature[]>([]);
   const [weatherTelemetry, setWeatherTelemetry] = useState<WeatherTelemetry | null>(null);
+  const [shelters, setShelters] = useState<Shelter[]>([]);
+  const [hazardPerimeter, setHazardPerimeter] = useState<HazardPerimeterFeature | null>(null);
 
   useEffect(() => {
-    // Load flood zones and weather telemetry
-    const loadWeatherAndZones = async () => {
+    // Load flood zones, weather telemetry, and evacuation shelters
+    const loadMapData = async () => {
       try {
-        const [zonesData, telemetryData] = await Promise.all([
+        const [zonesData, telemetryData, sheltersData] = await Promise.all([
           api.getFloodZones(),
-          api.getWeatherTelemetry()
+          api.getWeatherTelemetry(),
+          api.getShelters()
         ]);
         if (zonesData?.features) {
           setFloodZones(zonesData.features);
@@ -128,18 +152,51 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
         if (telemetryData) {
           setWeatherTelemetry(telemetryData);
         }
+        if (sheltersData) {
+          setShelters(sheltersData);
+        }
       } catch (err) {
-        console.error('Failed to load flood zones / weather', err);
+        console.error('Failed to load map data', err);
       }
     };
-    loadWeatherAndZones();
+    loadMapData();
   }, []);
+
+  // Fetch dynamic hazard perimeter whenever selected incident changes
+  useEffect(() => {
+    if (!selectedIncident) {
+      setHazardPerimeter(null);
+      return;
+    }
+    const loadPerimeter = async () => {
+      try {
+        const perim = await api.getHazardPerimeter(selectedIncident.id);
+        setHazardPerimeter(perim);
+      } catch (e) {
+        setHazardPerimeter(null);
+      }
+    };
+    loadPerimeter();
+  }, [selectedIncident]);
 
   return (
     <div className="w-full h-full relative overflow-hidden select-none">
       
       {/* Top Map Layer Control Bar */}
       <div className="absolute top-4 right-4 z-[1000] flex items-center space-x-2 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shadow-2xl">
+        {/* Basemap Mode Switcher */}
+        <button
+          type="button"
+          onClick={() => {
+            setBasemapMode(prev => prev === 'tactical' ? 'satellite' : prev === 'satellite' ? 'streets' : 'tactical');
+          }}
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/90 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/50 transition"
+          title="Cycle Basemap: Tactical Dark / Satellite Aerial / OpenStreetMap"
+        >
+          <Globe className="w-3.5 h-3.5" />
+          <span className="capitalize">{basemapMode === 'tactical' ? 'Tactical Dark' : basemapMode === 'satellite' ? 'Satellite' : 'Street Map'}</span>
+        </button>
+
         <button
           type="button"
           onClick={() => setShowWeatherRadar(!showWeatherRadar)}
@@ -152,6 +209,20 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
         >
           <CloudRain className="w-3.5 h-3.5" />
           <span>Flood Radar</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowShelters(!showShelters)}
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+            showShelters
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/50'
+              : 'bg-slate-800 text-slate-400 hover:text-white'
+          }`}
+          title="Toggle Designated Evacuation Shelters & Relief Bases"
+        >
+          <Home className="w-3.5 h-3.5" />
+          <span>Shelters</span>
         </button>
 
         <button
@@ -207,15 +278,20 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
       >
         <MapController selectedIncident={selectedIncident} />
 
-        {/* Dynamic Tile Layer (Dark Matter / CartoDB or OpenStreetMap) */}
+        {/* Clean, High-Precision Tile Layer without Watermarks */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url={
-            lowBandwidth
-              ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-              : `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?api_key=${import.meta.env.VITE_CARTO_API_KEY || 'cb1_4ekr_1_985d9ad7f061f7ff08db79c4'}`
+          key={basemapMode}
+          attribution={
+            basemapMode === 'satellite'
+              ? '&copy; Esri &copy; Earthstar Geographics'
+              : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; u-SHA-jua Geospatial Engine'
           }
-          className={lowBandwidth ? 'dark-map-tiles' : ''}
+          url={
+            basemapMode === 'satellite'
+              ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+              : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+          }
+          className={basemapMode === 'tactical' ? 'dark-map-tiles' : ''}
           maxZoom={19}
         />
 
@@ -410,10 +486,70 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
             </Marker>
           );
         })}
+
+        {/* Dynamic Incident Hazard Perimeter Buffer Polygon */}
+        {hazardPerimeter && (
+          <Polygon
+            positions={hazardPerimeter.geometry.coordinates[0].map(([lon, lat]) => [lat, lon])}
+            pathOptions={{
+              color: '#ef4444',
+              fillColor: '#ef4444',
+              fillOpacity: 0.22,
+              weight: 2,
+              dashArray: '5, 8'
+            }}
+          >
+            <Popup>
+              <div className="p-1 space-y-1 text-slate-100 max-w-xs text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-red-400 border-b border-white/10 pb-1">
+                  <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
+                  DYNAMIC HAZARD CORDON ({hazardPerimeter.properties.radius_meters}m)
+                </div>
+                <p className="text-[11px] text-slate-200">
+                  {hazardPerimeter.properties.evacuation_advisory}
+                </p>
+                <div className="text-[10px] text-amber-300 font-mono pt-1">
+                  Est. Affected Population: ~{hazardPerimeter.properties.estimated_population_impacted.toLocaleString()} civilians
+                </div>
+              </div>
+            </Popup>
+          </Polygon>
+        )}
+
+        {/* Designated Evacuation Shelters & Relief Bases Layer */}
+        {showShelters && shelters.map((s) => {
+          const shelterIcon = createShelterMarker(s);
+          return (
+            <Marker
+              key={s.id}
+              position={[s.coordinates.latitude, s.coordinates.longitude]}
+              icon={shelterIcon}
+            >
+              <Popup>
+                <div className="p-1 space-y-1.5 text-slate-100 max-w-xs text-xs">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-1">
+                    <span className="font-bold text-emerald-400">{s.name}</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                      {s.occupancy_percent}% Full
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 font-mono">
+                    📍 {s.location_name}
+                  </p>
+                  <div className="text-[11px] space-y-0.5 text-slate-400">
+                    <div>Capacity: <strong className="text-white">{s.occupancy_current} / {s.capacity_total}</strong></div>
+                    <div>Open Beds: <strong className="text-emerald-400">{s.available_space}</strong></div>
+                    <div>Medical Post: <strong className="text-white">{s.medical_post_available ? '✓ Present' : '✗ None'}</strong></div>
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
       </MapContainer>
 
       {/* Floating Map Legend Overlay */}
-      <div className="absolute bottom-4 left-4 z-[1000] bg-[#111827]/90 backdrop-blur-md border border-white/10 rounded-xl p-3 shadow-2xl text-xs space-y-2 pointer-events-auto max-w-[230px]">
+      <div className="absolute bottom-4 left-4 z-[1000] bg-[#111827]/90 backdrop-blur-md border border-white/10 rounded-xl p-3 shadow-2xl text-xs space-y-2 pointer-events-auto max-w-[240px]">
         <h5 className="font-semibold text-slate-200 tracking-wider text-[11px] uppercase border-b border-white/10 pb-1">
           Tactical Map Legend
         </h5>
@@ -432,7 +568,11 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
           </div>
           <div className="flex items-center space-x-2">
             <span className="w-3.5 h-2 rounded border border-dashed border-red-500 bg-red-500/20"></span>
-            <span className="text-red-300 text-[11px]">Flash Flood Hazard Polygon</span>
+            <span className="text-red-300 text-[11px]">Hazard Cordon & Flood Plain</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-[12px]">🏠</span>
+            <span className="text-emerald-300 text-[11px]">Evacuation Shelters</span>
           </div>
           <div className="pt-1 border-t border-white/10 flex items-center space-x-2">
             <span className="text-[12px]">🚑 🚒 🚤</span>

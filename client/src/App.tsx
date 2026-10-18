@@ -11,6 +11,7 @@ import { ResponderFleet } from './components/ResponderFleet';
 import { CivilianPortalModal } from './components/CivilianPortalModal';
 import { AnalyticsModal } from './components/AnalyticsModal';
 import { ResponderPwaModal } from './components/ResponderPwaModal';
+import { CommandCenterModal } from './components/CommandCenterModal';
 
 export const App: React.FC = () => {
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -27,6 +28,7 @@ export const App: React.FC = () => {
   const [isCivilianPortalOpen, setIsCivilianPortalOpen] = useState<boolean>(false);
   const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState<boolean>(false);
   const [isResponderPwaOpen, setIsResponderPwaOpen] = useState<boolean>(false);
+  const [isCommandCenterOpen, setIsCommandCenterOpen] = useState<boolean>(false);
   
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -57,6 +59,22 @@ export const App: React.FC = () => {
       setToastMessage(null);
     }, 4500);
   };
+
+  // Close any active modal when pressing Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsReportModalOpen(false);
+        setIsSimulatorModalOpen(false);
+        setIsCivilianPortalOpen(false);
+        setIsAnalyticsModalOpen(false);
+        setIsResponderPwaOpen(false);
+        setIsCommandCenterOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Load initial incidents from backend
   const loadIncidents = async () => {
@@ -244,6 +262,7 @@ export const App: React.FC = () => {
         onOpenCivilianPortal={() => setIsCivilianPortalOpen(true)}
         onOpenAnalyticsModal={() => setIsAnalyticsModalOpen(true)}
         onOpenResponderPwa={() => setIsResponderPwaOpen(true)}
+        onOpenCommandCenter={() => setIsCommandCenterOpen(true)}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled(!soundEnabled)}
         criticalCount={criticalCount}
@@ -330,6 +349,15 @@ export const App: React.FC = () => {
         isOpen={isSimulatorModalOpen}
         onClose={() => setIsSimulatorModalOpen(false)}
         onSurgeTriggered={(msg) => showToast(msg)}
+      />
+
+      {/* Enterprise Tactical Command & Security Suite */}
+      <CommandCenterModal
+        isOpen={isCommandCenterOpen}
+        onClose={() => setIsCommandCenterOpen(false)}
+        incidents={incidents}
+        onIncidentUpdated={loadIncidents}
+        showToast={showToast}
       />
     </div>
   );

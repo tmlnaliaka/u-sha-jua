@@ -74,3 +74,27 @@ The platform integrates an event-driven architecture designed for resilient disa
    - Real-time meteorological telemetry HUD (`/api/v1/weather/telemetry`): rainfall rate, river gauge height, storm alerts.
    - High-hazard flood plain polygons (`/api/v1/weather/flood-zones`) for Mathare Valley, Kibera Ngong Corridor, Nairobi Basin, and Mukuru with designated evacuation muster points.
 
+### Phase 7: Enterprise Security Hardening & Advanced Capabilities (Completed)
+1. **Security Vulnerability Hardening & Defense-in-Depth**:
+   - Role-Based Access Control (RBAC) & API Key Security (`/server/services/security.py`) enforcing separate access tiers for Dispatchers, Responders, and Administrators (`X-API-Key`).
+   - In-Memory Sliding-Window Token-Bucket Rate Limiter protecting public distress ingestion from volumetric denial-of-service and AI cost exhaustion.
+   - Automated PII Redaction (`mask_pii`) filtering civilian mobile numbers from live WebSocket telemetry broadcasts.
+   - Input Sanitization & Payload Bounding stripping malicious script injection and non-printable control characters.
+   - Telecom Carrier Secret Validation for Africa's Talking / Twilio webhook gateways (`X-Webhook-Secret`).
+   - CORS Hardening eliminating unsafe wildcard credential policies.
+2. **AI Multi-Criteria Unit Recommendation & One-Touch Auto-Dispatch**:
+   - MCDA scoring algorithm (`/api/v1/responders/recommend/{id}`) factoring unit specialty affinity, Haversine travel distance, and response ETA.
+   - One-click autonomous dispatch authorization (`/api/v1/responders/auto-dispatch/{id}`).
+3. **Designated Evacuation Shelters & Relief Capacity Engine**:
+   - Real-time shelter registry (`/api/v1/shelters`) tracking capacity, current occupancy, water supply status, and medical posts across high-hazard settlements.
+   - Nearest operational shelter calculation (`/api/v1/shelters/nearest`) with live occupancy adjustment.
+4. **Dynamic Hazard Perimeter & Threat Buffer Modeling**:
+   - Procedural 16-point circular hazard buffer polygon calculation (`/api/v1/incidents/{id}/hazard-perimeter`) scaling with urgency.
+   - Real-time population impact estimation and evacuation corridor advisories rendered on the Leaflet map.
+5. **Cryptographic SHA-256 Tamper-Evident Audit Ledger**:
+   - Immutable hash-chained audit ledger (`/api/v1/analytics/audit-log`) tracking every incident, dispatch, status transition, and operator intervention.
+   - Full chain verification endpoint (`/api/v1/analytics/audit-log/verify`) for post-disaster humanitarian compliance.
+6. **Offline Crisis Mesh Synchronization & Portable Bundle Export**:
+   - LoRa / Bluetooth mesh packet ingestion endpoint (`/api/v1/incidents/sync/offline-packet`) for cellular blackout resilience.
+   - Portable JSON crisis package export (`/api/v1/incidents/export/offline-bundle`) for field tablet deployments.
+

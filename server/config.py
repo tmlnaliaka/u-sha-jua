@@ -15,12 +15,19 @@ class Settings(BaseModel):
     MAPBOX_ACCESS_TOKEN: str = os.getenv("MAPBOX_ACCESS_TOKEN", "")
     HOST: str = os.getenv("HOST", "127.0.0.1")
     PORT: int = int(os.getenv("PORT", "8000"))
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    ENFORCE_STRICT_AUTH: bool = os.getenv("ENFORCE_STRICT_AUTH", "false").lower() in ("true", "1")
+    DISPATCHER_API_KEY: str = os.getenv("DISPATCHER_API_KEY", "ushajua-dev-dispatcher-key")
+    RESPONDER_API_KEY: str = os.getenv("RESPONDER_API_KEY", "ushajua-dev-responder-key")
+    ADMIN_API_KEY: str = os.getenv("ADMIN_API_KEY", "ushajua-dev-admin-key")
+    SMS_WEBHOOK_SECRET: str = os.getenv("SMS_WEBHOOK_SECRET", "")
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "*"
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
     ]
 
 settings = Settings()

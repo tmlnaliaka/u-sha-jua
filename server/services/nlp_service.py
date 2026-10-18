@@ -114,7 +114,10 @@ class NLPService:
 
         if settings.GEMINI_API_KEY:
             try:
-                import google.generativeai as genai
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=FutureWarning)
+                    import google.generativeai as genai
                 genai.configure(api_key=settings.GEMINI_API_KEY)
                 self.gemini_model = genai.GenerativeModel("gemini-2.5-flash")
                 self.gemini_available = True
@@ -153,14 +156,17 @@ class NLPService:
                 self._consecutive_failures = 0
                 self.cache.set(raw_text, device_lat, device_lon, result)
                 return result
-            except (asyncio.TimeoutError, Exception) as e:
-                self._consecutive_failures += 1
-                if self._consecutive_failures >= 3:
-                    # Open circuit for 30s to avoid latency cascade
-                    self._circuit_open_until = now + 30.0
-                    logger.warning(f"Gemini API circuit tripped ({e}); disabling for 30s.")
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "Quota exceeded" in err_str:
+                    # Immediate quota backoff for 60s
+                    self._circuit_open_until = now + 60.0
+                    logger.info("Gemini API rate limit reached (429); engaging Kenya gazetteer fallback for 60s.")
                 else:
-                    logger.warning(f"Gemini API extraction failed ({e}), using fallback parser.")
+                    self._consecutive_failures += 1
+                    if self._consecutive_failures >= 3:
+                        self._circuit_open_until = now + 30.0
+                        logger.warning(f"Gemini API circuit tripped; disabling for 30s.")
 
         # Step 3: Local deterministic gazetteer & keyword NLP parser
         result = self._extract_fallback(raw_text, device_lat, device_lon)

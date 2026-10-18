@@ -18,6 +18,8 @@ from schemas.responder import (
 from services.nlp_service import nlp_service
 from services.websocket_manager import ws_manager
 from services.spatial_index import spatial_grid, spatial_cache
+from services.security import verify_api_key, ROLE_DISPATCHER, ROLE_RESPONDER, ROLE_ADMIN
+from services.audit_service import audit_service
 
 router = APIRouter(prefix="/responders", tags=["Emergency Responders"])
 
@@ -125,10 +127,111 @@ def get_responders(
 
     return results
 
+@router.get("/recommend/{incident_id}")
+def recommend_responder_for_incident(
+    incident_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Multi-Criteria Decision Analysis (MCDA) Emergency Recommendation Engine:
+    Scores available units based on specialty affinity, proximity (Haversine),
+    road travel ETA, and operational readiness.
+    """
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    responders = db.query(ResponderUnit).all()
+    inc_type = incident.incident_type.value if hasattr(incident.incident_type, "value") else str(incident.incident_type)
+
+    # Unit specialty affinity matrix (0.0 to 1.0)
+    AFFINITY_MATRIX = {
+        "Flood": {
+            ResponderType.WATER_RESCUE.value: 1.0,
+            ResponderType.SEARCH_RESCUE.value: 0.85,
+            ResponderType.AMBULANCE.value: 0.80,
+            ResponderType.FIRE_ENGINE.value: 0.40
+        },
+        "Fire": {
+            ResponderType.FIRE_ENGINE.value: 1.0,
+            ResponderType.AMBULANCE.value: 0.85,
+            ResponderType.SEARCH_RESCUE.value: 0.65,
+            ResponderType.WATER_RESCUE.value: 0.50
+        },
+        "Collapse": {
+            ResponderType.SEARCH_RESCUE.value: 1.0,
+            ResponderType.AMBULANCE.value: 0.90,
+            ResponderType.FIRE_ENGINE.value: 0.70,
+            ResponderType.WATER_RESCUE.value: 0.30
+        }
+    }
+
+    type_matrix = AFFINITY_MATRIX.get(inc_type, {})
+
+    recommendations = []
+    for r in responders:
+        d = r.to_dict()
+        dist = haversine_km(r.latitude, r.longitude, incident.latitude, incident.longitude)
+        eta = calculate_eta(dist)
+        d["distance_km"] = dist
+        d["eta_minutes"] = eta
+
+        # 1. Specialty affinity score (40 points max)
+        u_type = r.unit_type.value if hasattr(r.unit_type, "value") else str(r.unit_type)
+        aff = type_matrix.get(u_type, 0.5)
+        specialty_score = aff * 40.0
+
+        # 2. Proximity & ETA score (45 points max, linear decay over 12km)
+        dist_score = max(0.0, 45.0 - (dist * 3.75))
+
+        # 3. Availability score (15 points max)
+        avail_score = 15.0 if r.status == ResponderStatus.AVAILABLE else 0.0
+
+        total_match_score = round(min(100.0, max(10.0, specialty_score + dist_score + avail_score)), 1)
+        d["match_score"] = total_match_score
+        d["recommendation_rationale"] = (
+            f"Specialty match: {int(aff*100)}% ({u_type} for {inc_type}), "
+            f"ETA: {eta} min ({dist} km), Status: {d['status']}"
+        )
+        recommendations.append(d)
+
+    # Sort highest match score first, preferring available units
+    recommendations.sort(key=lambda x: (x["status"] != "Available", -x["match_score"]))
+
+    best_match = recommendations[0] if recommendations else None
+    return {
+        "incident_id": incident.id,
+        "incident_type": inc_type,
+        "urgency_level": incident.urgency_level.value if hasattr(incident.urgency_level, "value") else str(incident.urgency_level),
+        "location_name": incident.location_name,
+        "best_match": best_match,
+        "all_recommendations": recommendations
+    }
+
+@router.post("/auto-dispatch/{incident_id}", response_model=ResponderUnitResponse)
+async def auto_dispatch_best_responder(
+    incident_id: str,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """
+    One-touch autonomous dispatch:
+    Calculates best available unit via MCDA engine and immediately initiates dispatch.
+    """
+    rec = recommend_responder_for_incident(incident_id, db)
+    best = rec.get("best_match")
+    if not best:
+        raise HTTPException(status_code=400, detail="No suitable responder units available for dispatch")
+
+    # Delegate to dispatch
+    req = DispatchAssignmentRequest(incident_id=incident_id)
+    return await dispatch_responder(best["id"], req, role, db)
+
 @router.post("/{responder_id}/dispatch", response_model=ResponderUnitResponse)
 async def dispatch_responder(
     responder_id: str,
     body: DispatchAssignmentRequest,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
     db: Session = Depends(get_db)
 ):
     """
@@ -136,6 +239,7 @@ async def dispatch_responder(
     1. Updates responder state to Dispatched with assigned incident ID.
     2. Updates incident triage state to Dispatched.
     3. Broadcasts real-time telemetry events to all active dispatch centers.
+    4. Logs action to immutable SHA-256 audit ledger.
     """
     responder = db.query(ResponderUnit).filter(ResponderUnit.id == responder_id).first()
     if not responder:
@@ -164,6 +268,20 @@ async def dispatch_responder(
     spatial_grid.add_or_update(inc_dict)
     spatial_cache.invalidate_all()
 
+    # Log to cryptographic audit trail
+    audit_service.log_event(
+        action="RESPONDER_DISPATCHED",
+        actor=role,
+        details={
+            "responder_id": responder.id,
+            "callsign": responder.callsign,
+            "incident_id": incident.id,
+            "location": incident.location_name,
+            "distance_km": dist,
+            "eta_minutes": resp_dict["eta_minutes"]
+        }
+    )
+
     # Broadcast synchronized telemetry
     await ws_manager.broadcast("responder_dispatched", {
         "responder": resp_dict,
@@ -183,6 +301,7 @@ async def dispatch_responder(
 async def update_responder_status(
     responder_id: str,
     update: ResponderStatusUpdate,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_RESPONDER, ROLE_ADMIN])),
     db: Session = Depends(get_db)
 ):
     """Updates unit operational readiness (Available, OnScene, Returning)."""
@@ -190,6 +309,7 @@ async def update_responder_status(
     if not responder:
         raise HTTPException(status_code=404, detail="Responder unit not found")
 
+    old_status = responder.status
     responder.status = update.status
     if update.status == ResponderStatus.AVAILABLE:
         responder.assigned_incident_id = None
@@ -198,6 +318,13 @@ async def update_responder_status(
     db.refresh(responder)
 
     d = responder.to_dict()
+
+    audit_service.log_event(
+        action="RESPONDER_STATUS_CHANGED",
+        actor=role,
+        details={"responder_id": responder.id, "callsign": responder.callsign, "old": str(old_status), "new": str(update.status)}
+    )
+
     await ws_manager.broadcast("responder_status_updated", d)
     return d
 
@@ -205,6 +332,7 @@ async def update_responder_status(
 async def update_responder_location(
     responder_id: str,
     coords: ResponderCoordinate,
+    role: str = Depends(verify_api_key([ROLE_RESPONDER, ROLE_ADMIN])),
     db: Session = Depends(get_db)
 ):
     """Updates real-time GPS coordinates of a field responder unit and broadcasts telemetry."""
@@ -225,6 +353,7 @@ async def update_responder_location(
 @router.post("/surge-simulate")
 async def simulate_crisis_surge(
     req: SurgeSimulationRequest,
+    role: str = Depends(verify_api_key([ROLE_ADMIN])),
     db: Session = Depends(get_db)
 ):
     """
@@ -270,6 +399,12 @@ async def simulate_crisis_surge(
         await ws_manager.broadcast("incident_reported", d)
 
     spatial_cache.invalidate_all()
+
+    audit_service.log_event(
+        action="CRISIS_SURGE_SIMULATED",
+        actor=role,
+        details={"injected_count": len(dicts)}
+    )
 
     return {
         "status": "surge_simulated",

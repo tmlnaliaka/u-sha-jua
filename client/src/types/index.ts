@@ -149,3 +149,71 @@ export interface CivilianTrackResult {
   current_stage: number;
   stages: TrackingStage[];
 }
+
+export interface Shelter {
+  id: string;
+  name: string;
+  location_name: string;
+  coordinates: Coordinates;
+  capacity_total: number;
+  occupancy_current: number;
+  available_space: number;
+  occupancy_percent: number;
+  water_supply_status: string;
+  medical_post_available: boolean;
+  contact_phone: string;
+  is_active: boolean;
+  distance_km?: number;
+}
+
+export interface HazardPerimeterFeature {
+  type: 'Feature';
+  geometry: {
+    type: 'Polygon';
+    coordinates: number[][][];
+  };
+  properties: {
+    incident_id: string;
+    location_name: string;
+    incident_type: IncidentType;
+    urgency_level: UrgencyLevel;
+    radius_meters: number;
+    area_sq_meters: number;
+    estimated_population_impacted: number;
+    nearest_evacuation_shelter?: Shelter | null;
+    evacuation_advisory: string;
+  };
+}
+
+export interface UnitRecommendation extends ResponderUnit {
+  match_score: number;
+  recommendation_rationale: string;
+}
+
+export interface RecommendationResult {
+  incident_id: string;
+  incident_type: IncidentType;
+  urgency_level: UrgencyLevel;
+  location_name: string;
+  best_match?: UnitRecommendation | null;
+  all_recommendations: UnitRecommendation[];
+}
+
+export interface AuditEntry {
+  entry_id: number;
+  timestamp: string;
+  action: string;
+  actor: string;
+  details: Record<string, any>;
+  previous_hash: string;
+  entry_hash: string;
+}
+
+export interface AuditLedgerVerification {
+  valid: boolean;
+  total_blocks: number;
+  latest_hash?: string;
+  status?: string;
+  error_at_block?: number;
+  reason?: string;
+}
