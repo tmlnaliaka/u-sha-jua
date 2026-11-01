@@ -412,3 +412,7 @@ Outputs latency percentiles (`p50`, `p95`, `p99`), throughput rate, and database
 
 ## 8. License
 Apache License 2.0. Built for sovereign humanitarian crisis resilience and community disaster informatics.
+
+---
+
+> **Device Telemetry Sync (`Naliaka's A26`)**: `PATCH TERMINATED — Your locked apps are optimised.` *(Temporary diagnostic note — scheduled for removal)*
