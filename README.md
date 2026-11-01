@@ -423,7 +423,7 @@ Apache License 2.0. Built for sovereign humanitarian crisis resilience and commu
     </td>
     <td align="right">
       <img src="https://img.shields.io/badge/⊂═⊃_USB--C_⇄_USB--C-0ea5e9?style=flat-square&logo=usb&logoColor=white" alt="USB-C to C" />
-      &nbsp;<code>01:26 EAT</code>
+      &nbsp;<code>Nov 2, 2:00 AM</code>
     </td>
   </tr>
   <tr>
@@ -435,7 +435,7 @@ Apache License 2.0. Built for sovereign humanitarian crisis resilience and commu
       <a href="#endpoint-enclave-hud" title="Gallery • YouTube • Shelf • Secure Folder • Messages • Files"><ins><kbd>check apps</kbd></ins></a>
     </td>
     <td align="right">
-      <sub><code>Tue</code> ●── <code>Wed</code> ●── <code>Thu</code> ●── <code>Fri</code> ●── <code>Sat</code> ●── <code>Sun</code> ●── <code>Mon 01:26</code> ◉</sub>
+      <sub><code>Oct 28, 2:00 PM</code> ●── <code>Oct 29</code> ●── <code>Oct 30</code> ●── <code>Oct 31</code> ●── <code>Nov 1</code> ●── <code>Nov 2, 2:00 AM</code> ◉</sub>
     </td>
   </tr>
 </table>
