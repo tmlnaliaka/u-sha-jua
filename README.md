@@ -417,8 +417,54 @@ Apache License 2.0. Built for sovereign humanitarian crisis resilience and commu
 
 <div id="endpoint-enclave-hud" align="center">
 
-| 🛡️ **ENDPOINT SEC-OPS SNAPSHOT** | 📱 **NODE:** `Naliaka's A26` <sub>(`SM-A266B • SELinux:Enforcing • TEE:0x0`)</sub> | 🔌 ![USB-C to C Bridge](https://img.shields.io/badge/%E2%8A%82%E2%95%90%E2%8A%83_TYPE--C_%E2%87%84_TYPE--C-LINKED_(USB_3.2_PD)-0ea5e9?style=flat-square&logo=usb&logoColor=white "Hardware Bridge: USB Type-C to Type-C Direct Enclave Link • Data/ADB Tunnel Guarded") | ⚡ **STATE:** `PATCH TERMINATED — Your locked apps are optimised` | 🕒 [![Live EAT Telemetry](https://img.shields.io/badge/LIVE_CLOCK-EAT_(UTC%2B3)_%E2%80%A2_SYNCED-10b981?style=flat-square&logo=clockify&logoColor=white)](https://time.is/Nairobi "Click or hover for Live EAT (UTC+3) Atomic Clock Sync") |
-| :--- | :--- | :--- | :--- | :--- |
-| <sub>**ENCLAVE SANDBOX**</sub> | <sub>`AES-256-GCM / Keystore v4` • **Hover ➔** <a href="#endpoint-enclave-hud" title="🔒 OPTIMISED & LOCKED APPS [Naliaka's A26]:&#10;• Gallery        [ UID:10142 | AES-256-GCM | LOCKED & OPTIMISED ]&#10;• YouTube        [ UID:10188 | SELinux Sandbox | LOCKED & OPTIMISED ]&#10;• Shelf          [ UID:10204 | Enclave Vault | LOCKED & OPTIMISED ]&#10;• Secure Folder  [ UID:10091 | Knox TEE 0x0 | LOCKED & OPTIMISED ]&#10;• Messages       [ UID:10115 | E2EE Guard | LOCKED & OPTIMISED ]&#10;• Settings       [ UID:1000  | Root-Guard | LOCKED & OPTIMISED ]"><ins><kbd>🔍 check apps</kbd></ins></a></sub> | <sub><abbr title="Physical Interface: Reversible 24-pin USB Type-C to Type-C Hardware Bridge • CC1/CC2 Handshake Verified • MTP/PTP Locked"><kbd>⊂═⚡═⊃ C-to-C Bridge: SECURE</kbd></abbr></sub> | <sub>**TIMELINE (`TUE ➔ TODAY`)**</sub> | <sub><abbr title="Tuesday: Kernel Hook & Bootloader Integrity Baseline (PASSED)"><kbd>TUE: Init</kbd></abbr> ➔ <abbr title="Wednesday: SELinux Policy & App-Lock Sandbox Hardening"><kbd>WED: Lock</kbd></abbr> ➔ <abbr title="Thursday: Memory Page Scrub & Dex2Oat Compilation"><kbd>THU: Scrub</kbd></abbr> ➔ <abbr title="Friday: Cryptographic Vault Verification (SHA-256)"><kbd>FRI: Audit</kbd></abbr> ➔ <abbr title="Saturday–Sunday: Zero-Anomaly Soak & Battery/Thread Tuning"><kbd>WKND: Soak</kbd></abbr> ➔ <abbr title="Today (Live): Patch Cycle Terminated — All Locked Apps Optimised"><kbd>🟢 TODAY: PATCH TERMINATED</kbd></abbr></sub> |
+<table>
+  <thead>
+    <tr>
+      <th colspan="3" align="left">
+        🔴 🟡 🟢 &nbsp;&nbsp;<code>SEC-OPS // ENDPOINT ENCLAVE INSPECTOR UI</code> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <a href="https://time.is/Nairobi" title="Live Synchronized EAT (UTC+3) Telemetry Clock">
+          <img src="https://img.shields.io/badge/🕒_LIVE_TELEMETRY-EAT_(UTC%2B3)_•_ONLINE-10b981?style=flat-square" alt="Live Clock" />
+        </a>
+      </th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center" width="34%">
+        <pre>┌──────────────────────────┐
+│ ● 5G               100%🔋│
+│  📱 Naliaka's A26        │
+│  ──────────────────────  │
+│  Model : SM-A266B/DS     │
+│  Kernel: 6.1.75-android  │
+│  SELinux: [██████] ENF   │
+│  TEE/Knox: 0x0 SECURE    │
+│         ╭──────╮         │
+└─────────┤ ▬▬▬  ├─────────┘
+          ╰──────╯</pre>
+      </td>
+      <td align="center" width="24%">
+        <img src="https://img.shields.io/badge/USB_TYPE--C_⇄_TYPE--C-10Gbps_PD_LINKED-0ea5e9?style=flat-square&logo=usb&logoColor=white" alt="Type-C to Type-C" /><br/>
+        <pre>  ╭──────────╮      ╭──────────╮
+  │ ( ▬▬▬▬ ) │◄════►│ ( ▬▬▬▬ ) │
+  ╰──────────╯      ╰──────────╯
+   TYPE-C HOST       TYPE-C A26
+   [CC1/CC2 OK]     [MTP LOCKED]</pre>
+      </td>
+      <td align="left" width="42%">
+        <img src="https://img.shields.io/badge/STATUS-PATCH_TERMINATED-22c55e?style=for-the-badge&logo=shield&logoColor=white" alt="Patch Terminated" /><br/><br/>
+        <code>✅ Your locked apps are optimised</code><br/>
+        <sub>Enclave Memory Scrub: <code>██████████ 100%</code></sub><br/>
+        <sub>App Sandbox Integrity: <code>██████████ 100%</code></sub><br/><br/>
+        👉 <b>Inspect Vault:</b> <a href="#endpoint-enclave-hud" title="🔒 NALIAKA'S A26 — LOCKED &amp; OPTIMISED APPS&#10;──────────────────────────────────────────&#10;🖼️ Gallery        • AES-256-GCM   • [OPTIMISED &amp; LOCKED]&#10;▶️ YouTube        • Sandboxed     • [OPTIMISED &amp; LOCKED]&#10;📚 Shelf          • Enclave Vault • [OPTIMISED &amp; LOCKED]&#10;🔐 Secure Folder  • Knox TEE 0x0  • [OPTIMISED &amp; LOCKED]&#10;💬 Messages       • E2EE Guard    • [OPTIMISED &amp; LOCKED]&#10;⚙️ System UI      • Root-Guard    • [OPTIMISED &amp; LOCKED]"><ins><kbd>🔍 check apps</kbd></ins></a> <sub><i>(hover mouse on keyword)</i></sub>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="3" align="center">
+        <pre>TIMELINE  [TUE: Boot/Init] ───●─── [WED: Sandbox Lock] ───●─── [THU: Dex2Oat Scrub] ───●─── [FRI: SHA-256 Audit] ───●─── [SAT-SUN: Enclave Soak] ───◉ [🟢 TODAY: PATCH TERMINATED (LIVE)]</pre>
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 </div>
