@@ -416,55 +416,27 @@ Apache License 2.0. Built for sovereign humanitarian crisis resilience and commu
 ---
 
 <div id="endpoint-enclave-hud" align="center">
-
 <table>
-  <thead>
-    <tr>
-      <th colspan="3" align="left">
-        🔴 🟡 🟢 &nbsp;&nbsp;<code>SEC-OPS // ENDPOINT ENCLAVE INSPECTOR UI</code> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-        <a href="https://time.is/Nairobi" title="Live Synchronized EAT (UTC+3) Telemetry Clock">
-          <img src="https://img.shields.io/badge/🕒_LIVE_TELEMETRY-EAT_(UTC%2B3)_•_ONLINE-10b981?style=flat-square" alt="Live Clock" />
-        </a>
-      </th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center" width="34%">
-        <pre>┌──────────────────────────┐
-│ ● 5G               100%🔋│
-│  📱 Naliaka's A26        │
-│  ──────────────────────  │
-│  Model : SM-A266B/DS     │
-│  Kernel: 6.1.75-android  │
-│  SELinux: [██████] ENF   │
-│  TEE/Knox: 0x0 SECURE    │
-│         ╭──────╮         │
-└─────────┤ ▬▬▬  ├─────────┘
-          ╰──────╯</pre>
-      </td>
-      <td align="center" width="24%">
-        <img src="https://img.shields.io/badge/USB_TYPE--C_⇄_TYPE--C-10Gbps_PD_LINKED-0ea5e9?style=flat-square&logo=usb&logoColor=white" alt="Type-C to Type-C" /><br/>
-        <pre>  ╭──────────╮      ╭──────────╮
-  │ ( ▬▬▬▬ ) │◄════►│ ( ▬▬▬▬ ) │
-  ╰──────────╯      ╰──────────╯
-   TYPE-C HOST       TYPE-C A26
-   [CC1/CC2 OK]     [MTP LOCKED]</pre>
-      </td>
-      <td align="left" width="42%">
-        <img src="https://img.shields.io/badge/STATUS-PATCH_TERMINATED-22c55e?style=for-the-badge&logo=shield&logoColor=white" alt="Patch Terminated" /><br/><br/>
-        <code>✅ Your locked apps are optimised</code><br/>
-        <sub>Enclave Memory Scrub: <code>██████████ 100%</code></sub><br/>
-        <sub>App Sandbox Integrity: <code>██████████ 100%</code></sub><br/><br/>
-        👉 <b>Inspect Vault:</b> <a href="#endpoint-enclave-hud" title="🔒 NALIAKA'S A26 — LOCKED &amp; OPTIMISED APPS&#10;──────────────────────────────────────────&#10;🖼️ Gallery        • AES-256-GCM   • [OPTIMISED &amp; LOCKED]&#10;▶️ YouTube        • Sandboxed     • [OPTIMISED &amp; LOCKED]&#10;📚 Shelf          • Enclave Vault • [OPTIMISED &amp; LOCKED]&#10;🔐 Secure Folder  • Knox TEE 0x0  • [OPTIMISED &amp; LOCKED]&#10;💬 Messages       • E2EE Guard    • [OPTIMISED &amp; LOCKED]&#10;⚙️ System UI      • Root-Guard    • [OPTIMISED &amp; LOCKED]"><ins><kbd>🔍 check apps</kbd></ins></a> <sub><i>(hover mouse on keyword)</i></sub>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="3" align="center">
-        <pre>TIMELINE  [TUE: Boot/Init] ───●─── [WED: Sandbox Lock] ───●─── [THU: Dex2Oat Scrub] ───●─── [FRI: SHA-256 Audit] ───●─── [SAT-SUN: Enclave Soak] ───◉ [🟢 TODAY: PATCH TERMINATED (LIVE)]</pre>
-      </td>
-    </tr>
-  </tbody>
+  <tr>
+    <td align="left" colspan="2">
+      <b>Naliaka's A26</b> &nbsp;<sub><code>SM-A266B • SELinux: Enforcing • Knox 0x0</code></sub>
+    </td>
+    <td align="right">
+      <img src="https://img.shields.io/badge/⊂═⊃_USB--C_⇄_USB--C-0ea5e9?style=flat-square&logo=usb&logoColor=white" alt="USB-C to C" />
+      &nbsp;<code>01:26 EAT</code>
+    </td>
+  </tr>
+  <tr>
+    <td align="left">
+      <img src="https://img.shields.io/badge/PATCH_TERMINATED-10b981?style=flat-square&logo=checkmarx&logoColor=white" alt="Patch Terminated" /><br/>
+      <sub>Your locked apps are optimised</sub>
+    </td>
+    <td align="center">
+      <a href="#endpoint-enclave-hud" title="Gallery • YouTube • Shelf • Secure Folder • Messages • Files"><ins><kbd>check apps</kbd></ins></a>
+    </td>
+    <td align="right">
+      <sub><code>Tue</code> ●── <code>Wed</code> ●── <code>Thu</code> ●── <code>Fri</code> ●── <code>Sat</code> ●── <code>Sun</code> ●── <code>Mon 01:26</code> ◉</sub>
+    </td>
+  </tr>
 </table>
-
 </div>
