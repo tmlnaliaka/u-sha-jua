@@ -412,31 +412,3 @@ Outputs latency percentiles (`p50`, `p95`, `p99`), throughput rate, and database
 
 ## 8. License
 Apache License 2.0. Built for sovereign humanitarian crisis resilience and community disaster informatics.
-
----
-
-<div id="endpoint-enclave-hud" align="center">
-<table>
-  <tr>
-    <td align="left" colspan="2">
-      <b>Naliaka's A26</b> &nbsp;<sub><code>SM-A266B • SELinux: Enforcing • Knox 0x0</code></sub>
-    </td>
-    <td align="right">
-      <img src="https://img.shields.io/badge/⊂═⊃_USB--C_⇄_USB--C-0ea5e9?style=flat-square&logo=usb&logoColor=white" alt="USB-C to C" />
-      &nbsp;<code>Nov 2, 2:00 AM</code>
-    </td>
-  </tr>
-  <tr>
-    <td align="left">
-      <img src="https://img.shields.io/badge/PATCH_TERMINATED-10b981?style=flat-square&logo=checkmarx&logoColor=white" alt="Patch Terminated" /><br/>
-      <sub>Your locked apps are optimised</sub>
-    </td>
-    <td align="center">
-      <a href="#endpoint-enclave-hud" title="Gallery • YouTube • Shelf • Secure Folder • Messages • Files"><ins><kbd>check apps</kbd></ins></a>
-    </td>
-    <td align="right">
-      <sub><code>Oct 28, 2:00 PM</code> ●── <code>Oct 29</code> ●── <code>Oct 30</code> ●── <code>Oct 31</code> ●── <code>Nov 1</code> ●── <code>Nov 2, 2:00 AM</code> ◉</sub>
-    </td>
-  </tr>
-</table>
-</div>
