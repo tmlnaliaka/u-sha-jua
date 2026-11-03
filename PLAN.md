@@ -98,3 +98,11 @@ The platform integrates an event-driven architecture designed for resilient disa
    - LoRa / Bluetooth mesh packet ingestion endpoint (`/api/v1/incidents/sync/offline-packet`) for cellular blackout resilience.
    - Portable JSON crisis package export (`/api/v1/incidents/export/offline-bundle`) for field tablet deployments.
 
+### Phase 8: Production Hardening, Durable Audit Ledger & OASIS CAP v1.2 Interoperability (Completed)
+1. **Durable Database-Backed SHA-256 Audit Chain**:
+   - Persistent `audit_blocks` table (`server/models/audit.py`) ensuring historical SHA-256 blocks survive server restarts.
+2. **OASIS Common Alerting Protocol (CAP v1.2) Export**:
+   - Standard `/api/v1/incidents/{id}/cap-alert` endpoint generating JSON and XML `<alert>` payloads with `<circle>` and 16-point `<polygon>` hazard bounds.
+3. **Client Offline Outbox Queue & WCAG 2.2 Accessibility**:
+   - Browser `localStorage` outbox auto-flushing on network reconnection + semantic CSS design tokens and `aria-live="assertive"` announcements.
+
