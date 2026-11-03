@@ -206,3 +206,23 @@ def test_audit_log_endpoint():
     ver_res = client.get("/api/v1/analytics/audit-log/verify")
     assert ver_res.status_code == 200
     assert ver_res.json()["valid"] is True
+
+
+def test_audit_ledger_persists_across_restarts():
+    """Verifies that SHA-256 hash-chained audit blocks persist in SQLite/PostGIS across service restarts."""
+    ledger_instance_1 = AuditService(persist_to_db=True)
+    initial_count = ledger_instance_1.verify_integrity()["total_blocks"]
+
+    logged = ledger_instance_1.log_event(
+        action="PERSISTENT_RESTART_CHECK",
+        actor="Pytest/TDD",
+        details={"check": "durable_sha256_chain"}
+    )
+    assert logged.entry_id == initial_count
+
+    # Simulate server restart by instantiating a brand-new AuditService reading from the database
+    ledger_instance_2 = AuditService(persist_to_db=True)
+    ver = ledger_instance_2.verify_integrity()
+    assert ver["valid"] is True
+    assert ver["total_blocks"] >= initial_count + 1
+    assert ver["latest_hash"] == logged.entry_hash

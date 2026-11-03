@@ -76,3 +76,28 @@ def test_civilian_tracking_and_responder_gps_update():
     updated_unit = res_gps.json()
     assert updated_unit["coordinates"]["latitude"] == -1.2650
     assert updated_unit["coordinates"]["longitude"] == 36.8590
+
+
+def test_oasis_cap_v1_2_alert_generation():
+    """Validates OASIS Common Alerting Protocol (CAP v1.2) JSON and XML export."""
+    res_rep = client.post(
+        "/api/v1/incidents/report",
+        json={
+            "raw_text": "Critical flash flood surging in Mathare 4A, families trapped on rooftops!",
+            "device_lat": -1.2612,
+            "device_lon": 36.8574
+        }
+    )
+    assert res_rep.status_code == 201
+    inc_id = res_rep.json()["id"]
+
+    res_cap = client.get(f"/api/v1/incidents/{inc_id}/cap-alert")
+    assert res_cap.status_code == 200
+    cap = res_cap.json()
+    assert cap["identifier"] == f"USHAJUA-CAP-{inc_id}"
+    assert cap["status"] == "Actual"
+    assert cap["msgType"] == "Alert"
+    assert cap["info"]["urgency"] in ["Immediate", "Expected", "Future"]
+    assert cap["info"]["severity"] in ["Extreme", "Severe", "Moderate"]
+    assert "urn:oasis:names:tc:emergency:cap:1.2" in cap["xml"]
+    assert "<circle>" in cap["xml"]

@@ -30,6 +30,18 @@ export interface CacheMetrics {
 
 // Development default key for tactical dispatcher commands
 let currentApiKey: string = 'ushajua-dev-dispatcher-key';
+const OFFLINE_OUTBOX_KEY = 'ushajua_offline_outbox_v1';
+
+export interface QueuedOfflineReport {
+  id: string;
+  raw_text: string;
+  incident_type: 'Flood' | 'Fire' | 'Collapse';
+  urgency_level: 'Low' | 'Medium' | 'Critical';
+  location_name: string;
+  latitude: number;
+  longitude: number;
+  timestamp: string;
+}
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
@@ -48,6 +60,75 @@ export const api = {
 
   getApiKey(): string {
     return currentApiKey;
+  },
+
+  getOfflineOutbox(): QueuedOfflineReport[] {
+    try {
+      const raw = localStorage.getItem(OFFLINE_OUTBOX_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  enqueueOfflineReport(report: CivilianReportInput): Incident {
+    const outbox = this.getOfflineOutbox();
+    const id = `offline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const lat = report.device_lat ?? -1.2864;
+    const lon = report.device_lon ?? 36.8172;
+    const textLower = report.raw_text.toLowerCase();
+    const incident_type = textLower.includes('fire') || textLower.includes('smoke')
+      ? 'Fire'
+      : textLower.includes('collapse') || textLower.includes('wall')
+      ? 'Collapse'
+      : 'Flood';
+    const urgency_level = textLower.includes('trapped') || textLower.includes('urgent') || textLower.includes('critical')
+      ? 'Critical'
+      : 'Medium';
+    const entry: QueuedOfflineReport = {
+      id,
+      raw_text: report.raw_text,
+      incident_type,
+      urgency_level,
+      location_name: report.device_lat ? `Offline GPS Pin (${lat.toFixed(4)}, ${lon.toFixed(4)})` : 'Nairobi Offline Queue',
+      latitude: lat,
+      longitude: lon,
+      timestamp: new Date().toISOString()
+    };
+    outbox.push(entry);
+    try {
+      localStorage.setItem(OFFLINE_OUTBOX_KEY, JSON.stringify(outbox));
+    } catch {
+      // Ignore storage quota errors
+    }
+    return {
+      id: entry.id,
+      raw_text: entry.raw_text,
+      incident_type: entry.incident_type,
+      urgency_level: entry.urgency_level,
+      location_name: entry.location_name,
+      coordinates: { latitude: entry.latitude, longitude: entry.longitude },
+      status: 'Pending',
+      timestamp: entry.timestamp
+    };
+  },
+
+  async flushOfflineOutbox(): Promise<number> {
+    const outbox = this.getOfflineOutbox();
+    if (outbox.length === 0) return 0;
+    const res = await this.syncOfflinePacket('BROWSER_PWA_OUTBOX', outbox);
+    try {
+      localStorage.removeItem(OFFLINE_OUTBOX_KEY);
+    } catch {
+      // Ignore
+    }
+    return res.newly_ingested ?? outbox.length;
+  },
+
+  async getCapAlert(incidentId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/incidents/${encodeURIComponent(incidentId)}/cap-alert`);
+    if (!res.ok) throw new Error('Failed to generate OASIS CAP 1.2 alert');
+    return res.json();
   },
 
   async getIncidents(limit: number = 100, offset: number = 0): Promise<Incident[]> {

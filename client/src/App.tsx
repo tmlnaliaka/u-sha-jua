@@ -241,10 +241,29 @@ export const App: React.FC = () => {
       showToast(`Incident ingested: ${created.location_name}`);
       return created;
     } catch (err) {
-      console.error('Error submitting report', err);
-      throw err;
+      const queued = api.enqueueOfflineReport(report);
+      setIncidents((prev) => [queued, ...prev.filter((i) => i.id !== queued.id)]);
+      setSelectedIncident(queued);
+      showToast(`📡 Queued in Offline Outbox (${queued.location_name}) — will auto-sync when online`);
+      return queued;
     }
   };
+
+  useEffect(() => {
+    const handleOnline = async () => {
+      try {
+        const count = await api.flushOfflineOutbox();
+        if (count > 0) {
+          await loadIncidents();
+          showToast(`✅ Auto-synced ${count} queued offline distress report(s) to spatial ledger`);
+        }
+      } catch (e) {
+        console.error('Failed to auto-flush offline outbox', e);
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
 
   const criticalCount = incidents.filter(
     (i) => i.urgency_level === 'Critical' && i.status !== 'Resolved'
@@ -297,9 +316,14 @@ export const App: React.FC = () => {
           />
         </div>
 
-        {/* Live Notification Toast Banner */}
+        {/* Live Notification Toast Banner (WCAG 2.2 ARIA Live Region) */}
         {toastMessage && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[3000] px-4 py-2.5 rounded-xl bg-slate-900/95 border border-white/20 text-white text-xs font-semibold shadow-2xl backdrop-blur-md flex items-center space-x-2 animate-in fade-in slide-in-from-top-2">
+          <div
+            role="status"
+            aria-live="assertive"
+            aria-atomic="true"
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-[3000] px-4 py-2.5 rounded-xl bg-slate-900/95 border border-white/20 text-white text-xs font-semibold shadow-2xl backdrop-blur-md flex items-center space-x-2 animate-in fade-in slide-in-from-top-2"
+          >
             <span>{toastMessage}</span>
           </div>
         )}

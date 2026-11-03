@@ -180,6 +180,26 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
                   </span>
 
                   <div className="flex items-center space-x-1.5" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const cap = await api.getCapAlert(incident.id);
+                          const blob = new Blob([cap.xml], { type: 'application/xml' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `${cap.identifier}.xml`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch (err) {
+                          console.error('Failed to export CAP 1.2 XML', err);
+                        }
+                      }}
+                      className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-white/10 text-slate-300 text-[10px] font-mono transition"
+                      title="Export OASIS Common Alerting Protocol (CAP v1.2) XML Alert"
+                    >
+                      CAP 1.2
+                    </button>
                     {incident.status === 'Pending' && (
                       <>
                         <button

@@ -432,6 +432,83 @@ def get_incident_hazard_perimeter(incident_id: str, db: Session = Depends(get_db
         }
     }
 
+
+@router.get("/{incident_id}/cap-alert")
+def get_incident_oasis_cap_alert(incident_id: str, db: Session = Depends(get_db)):
+    """
+    OASIS Common Alerting Protocol (CAP v1.2 / ITU-T X.1303 bis) Alert Generator.
+    Why: Interagency crisis platforms (Kenya Met Dept, Red Cross, UN OCHA) require
+    standardized CAP v1.2 emergency alerts containing urgency, severity, certainty,
+    and WGS-84 circle/polygon geometries.
+    """
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    perim = get_incident_hazard_perimeter(incident_id, db)
+    props = perim["properties"]
+    urgency_val = props["urgency_level"]
+    type_val = props["incident_type"]
+    radius_km = round(props["radius_meters"] / 1000.0, 3)
+
+    cap_category = "Met" if type_val == "Flood" else ("Fire" if type_val == "Fire" else "Infra")
+    cap_urgency = "Immediate" if urgency_val == "Critical" else ("Expected" if urgency_val == "Medium" else "Future")
+    cap_severity = "Extreme" if urgency_val == "Critical" else ("Severe" if urgency_val == "Medium" else "Moderate")
+    sent_iso = (incident.timestamp or datetime.now(timezone.utc)).isoformat()
+    identifier = f"USHAJUA-CAP-{incident.id}"
+    headline = f"{urgency_val.upper()} {type_val.upper()} ALERT — {incident.location_name}"
+    circle_str = f"{incident.latitude},{incident.longitude} {radius_km}"
+
+    xml_payload = (
+        f'<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">\n'
+        f'  <identifier>{identifier}</identifier>\n'
+        f'  <sender>eoc@ushajua.go.ke</sender>\n'
+        f'  <sent>{sent_iso}</sent>\n'
+        f'  <status>Actual</status>\n'
+        f'  <msgType>Alert</msgType>\n'
+        f'  <scope>Public</scope>\n'
+        f'  <info>\n'
+        f'    <category>{cap_category}</category>\n'
+        f'    <event>{type_val} Emergency</event>\n'
+        f'    <urgency>{cap_urgency}</urgency>\n'
+        f'    <severity>{cap_severity}</severity>\n'
+        f'    <certainty>Observed</certainty>\n'
+        f'    <headline>{headline}</headline>\n'
+        f'    <description>{incident.raw_text}</description>\n'
+        f'    <instruction>{props["evacuation_advisory"]}</instruction>\n'
+        f'    <area>\n'
+        f'      <areaDesc>{incident.location_name}</areaDesc>\n'
+        f'      <circle>{circle_str}</circle>\n'
+        f'    </area>\n'
+        f'  </info>\n'
+        f'</alert>'
+    )
+
+    return {
+        "identifier": identifier,
+        "sender": "eoc@ushajua.go.ke",
+        "sent": sent_iso,
+        "status": "Actual",
+        "msgType": "Alert",
+        "scope": "Public",
+        "info": {
+            "category": cap_category,
+            "event": f"{type_val} Emergency",
+            "urgency": cap_urgency,
+            "severity": cap_severity,
+            "certainty": "Observed",
+            "headline": headline,
+            "description": incident.raw_text,
+            "instruction": props["evacuation_advisory"],
+            "area": {
+                "areaDesc": incident.location_name,
+                "circle": circle_str
+            }
+        },
+        "xml": xml_payload
+    }
+
 @router.post("/sync/offline-packet")
 async def sync_offline_distress_packet(
     packet: OfflinePacketSyncRequest,
