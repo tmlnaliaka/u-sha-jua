@@ -333,6 +333,7 @@ docker compose up -d --build
 | `GET` | `/api/v1/incidents/cache-metrics` | Public | None | `200 OK`: `{grid_indexed_items, cache_hits, cache_misses, cache_hit_rate, nlp_cache_hits, nlp_cache_misses}` |
 | `GET` | `/api/v1/incidents/track/{id}` | Public | Path: `id` (full UUID or prefix) | `200 OK`: `{incident, assigned_responder, current_stage (1-4), stages[]}` |
 | `GET` | `/api/v1/incidents/{id}/hazard-perimeter` | Public | Path: `id` | `200 OK`: GeoJSON `Polygon` Feature with `radius_meters`, `estimated_population_impacted`, `nearest_evacuation_shelter`, `evacuation_advisory` |
+| `GET` | `/api/v1/incidents/{id}/cap-alert` | Public | Path: `id` | `200 OK`: OASIS Common Alerting Protocol (CAP v1.2) JSON & XML alert with `<circle>` and `<polygon>` area bounds |
 | `POST` | `/api/v1/incidents/sync/offline-packet` | Public | JSON: `{device_id, packet_timestamp, incidents: OfflineSyncReport[]}` | `200 OK`: `{status: "synchronized", device_id, newly_ingested, already_synced}` |
 | `GET` | `/api/v1/incidents/export/offline-bundle` | Public | None | `200 OK`: `{bundle_version: "1.3.0-mesh", exported_at, active_incidents[], shelters[], security_checksum}` |
 | `GET` | `/api/v1/incidents/{id}` | Public | Path: `id` | `200 OK`: `IncidentResponse` |
