@@ -217,3 +217,28 @@ export interface AuditLedgerVerification {
   error_at_block?: number;
   reason?: string;
 }
+
+export interface CapAlertResponse {
+  identifier: string;
+  sender: string;
+  sent: string;
+  status: string;
+  msgType: string;
+  scope: string;
+  info: {
+    category: string;
+    event: string;
+    urgency: string;
+    severity: string;
+    certainty: string;
+    headline: string;
+    description: string;
+    instruction: string;
+    area: {
+      areaDesc: string;
+      circle: string;
+      polygon?: string;
+    };
+  };
+  xml: string;
+}
