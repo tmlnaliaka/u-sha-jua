@@ -35,7 +35,9 @@ KENYA_GAZETTEER: Dict[str, Tuple[float, float, str]] = {
     "bamburi": (-4.0044, 39.7153, "Bamburi, Mombasa"),
     "garissa": (-0.4532, 39.6460, "Tana River Basin, Garissa"),
     "nakuru": (-0.3031, 36.0800, "Nakuru Lake Basin"),
-    "eldoret": (0.5143, 35.2698, "Eldoret Town Center")
+    "eldoret": (0.5143, 35.2698, "Eldoret Town Center"),
+    "korogocho": (-1.2469, 36.8897, "Korogocho, Nairobi"),
+    "huruma": (-1.2569, 36.8711, "Huruma Estate, Nairobi")
 }
 
 DEFAULT_COORDINATES = (-1.286389, 36.817223, "Nairobi Central, Kenya")
