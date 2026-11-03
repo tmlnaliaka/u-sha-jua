@@ -101,3 +101,5 @@ def test_oasis_cap_v1_2_alert_generation():
     assert cap["info"]["severity"] in ["Extreme", "Severe", "Moderate"]
     assert "urn:oasis:names:tc:emergency:cap:1.2" in cap["xml"]
     assert "<circle>" in cap["xml"]
+    assert "<polygon>" in cap["xml"]
+    assert "polygon" in cap["info"]["area"]
