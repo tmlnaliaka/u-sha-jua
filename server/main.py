@@ -154,7 +154,8 @@ def health_check():
     return {
         "status": "healthy",
         "service": "u-SHA-jua Sovereign Backend API",
-        "version": "1.3.0-enterprise",
+        "version": "1.4.0-enterprise",
+        "db_dialect": engine.dialect.name,
         "security_mode": "strict" if settings.ENFORCE_STRICT_AUTH else "development_authenticated",
         "audit_ledger_blocks": integrity.get("total_blocks", 0),
         "audit_chain_verified": integrity.get("valid", False),
