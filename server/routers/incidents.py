@@ -458,6 +458,8 @@ def get_incident_oasis_cap_alert(incident_id: str, db: Session = Depends(get_db)
     identifier = f"USHAJUA-CAP-{incident.id}"
     headline = f"{urgency_val.upper()} {type_val.upper()} ALERT — {incident.location_name}"
     circle_str = f"{incident.latitude},{incident.longitude} {radius_km}"
+    ring_coords = perim["geometry"]["coordinates"][0]
+    polygon_str = " ".join(f"{pt[1]},{pt[0]}" for pt in ring_coords)
 
     xml_payload = (
         f'<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -480,6 +482,7 @@ def get_incident_oasis_cap_alert(incident_id: str, db: Session = Depends(get_db)
         f'    <area>\n'
         f'      <areaDesc>{incident.location_name}</areaDesc>\n'
         f'      <circle>{circle_str}</circle>\n'
+        f'      <polygon>{polygon_str}</polygon>\n'
         f'    </area>\n'
         f'  </info>\n'
         f'</alert>'
@@ -503,7 +506,8 @@ def get_incident_oasis_cap_alert(incident_id: str, db: Session = Depends(get_db)
             "instruction": props["evacuation_advisory"],
             "area": {
                 "areaDesc": incident.location_name,
-                "circle": circle_str
+                "circle": circle_str,
+                "polygon": polygon_str
             }
         },
         "xml": xml_payload
