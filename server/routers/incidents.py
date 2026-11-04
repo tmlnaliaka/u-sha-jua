@@ -664,3 +664,38 @@ async def delete_incident(
 
     await ws_manager.broadcast("incident_deleted", {"id": incident_id})
     return None
+
+
+@router.post("/{incident_id}/anonymize", response_model=IncidentResponse)
+async def anonymize_incident_data(
+    incident_id: str,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """
+    Kenya Data Protection Act (DPA 2019) / GDPR Right to Erasure compliant redaction.
+    Scrubs all citizen identifiers, contact numbers, and personal details from the report text
+    while preserving spatial crisis telemetry for public safety disaster coordination.
+    """
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    # Redact raw text to scrub personal contact info
+    incident.raw_text = mask_pii(incident.raw_text)
+    incident.raw_text = f"[REDACTED PER PRIVACY COMPLIANCE] {incident.raw_text}"
+    db.commit()
+    db.refresh(incident)
+
+    inc_dict = incident.to_dict()
+    spatial_grid.add_or_update(inc_dict)
+    spatial_cache.invalidate_all()
+
+    audit_service.log_event(
+        action="DATA_ANONYMIZED_RIGHT_TO_ERASURE",
+        actor=role,
+        details={"incident_id": incident.id, "compliance": "Kenya DPA 2019 / GDPR Art 17"}
+    )
+
+    await ws_manager.broadcast("incident_updated", inc_dict)
+    return inc_dict

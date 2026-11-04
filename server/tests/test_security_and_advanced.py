@@ -226,3 +226,18 @@ def test_audit_ledger_persists_across_restarts():
     assert ver["valid"] is True
     assert ver["total_blocks"] >= initial_count + 1
     assert ver["latest_hash"] == logged.entry_hash
+
+def test_incident_anonymization_privacy_right_to_erasure():
+    """Validates Kenya DPA 2019 / GDPR Right to Erasure anonymization endpoint."""
+    create_res = client.post("/api/v1/incidents/report", json={
+        "raw_text": "Flooding near Mathare. Please call Jane Doe at +254 712 345 678 immediately!",
+        "device_lat": -1.2612,
+        "device_lon": 36.8574
+    })
+    inc_id = create_res.json()["id"]
+
+    anon_res = client.post(f"/api/v1/incidents/{inc_id}/anonymize")
+    assert anon_res.status_code == 200
+    anon_text = anon_res.json()["raw_text"]
+    assert "[REDACTED PER PRIVACY COMPLIANCE]" in anon_text
+    assert "345 678" not in anon_text
