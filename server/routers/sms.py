@@ -1,5 +1,7 @@
 import uuid
 import logging
+import hmac
+import hashlib
 from typing import Optional
 from fastapi import APIRouter, Depends, Form, Request, status, HTTPException
 from sqlalchemy.orm import Session
@@ -29,10 +31,20 @@ async def incoming_sms_webhook(
     # Rate limit telecom endpoint (up to 300 requests/minute per carrier IP)
     check_rate_limit(request, max_requests=300, window_seconds=60.0)
 
-    # If webhook secret is configured, enforce verification
+    # If webhook secret is configured, enforce constant-time cryptographic verification
     if settings.SMS_WEBHOOK_SECRET:
         secret_header = request.headers.get("X-Webhook-Secret") or request.query_params.get("secret")
-        if secret_header != settings.SMS_WEBHOOK_SECRET:
+        signature_header = request.headers.get("X-Hub-Signature-256") or request.headers.get("X-AT-Signature")
+        
+        is_valid = False
+        if secret_header:
+            is_valid = hmac.compare_digest(secret_header, settings.SMS_WEBHOOK_SECRET)
+        elif signature_header:
+            body_bytes = await request.body()
+            computed = "sha256=" + hmac.new(settings.SMS_WEBHOOK_SECRET.encode(), body_bytes, hashlib.sha256).hexdigest()
+            is_valid = hmac.compare_digest(signature_header, computed)
+            
+        if not is_valid:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature")
 
     raw_text = ""
