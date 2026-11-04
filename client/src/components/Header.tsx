@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   Radio, Wifi, WifiOff, AlertTriangle, Plus, Volume2, VolumeX, 
-  ShieldAlert, Zap, BarChart3, Smartphone, LifeBuoy, ShieldCheck
+  ShieldAlert, Zap, BarChart3, Smartphone, LifeBuoy, ShieldCheck, Lock
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -14,6 +14,7 @@ interface HeaderProps {
   onOpenAnalyticsModal: () => void;
   onOpenResponderPwa: () => void;
   onOpenCommandCenter: () => void;
+  onOpenPrivacyModal?: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   criticalCount: number;
@@ -29,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAnalyticsModal,
   onOpenResponderPwa,
   onOpenCommandCenter,
+  onOpenPrivacyModal,
   soundEnabled,
   onToggleSound,
   criticalCount,
@@ -129,6 +131,17 @@ export const Header: React.FC<HeaderProps> = ({
         >
           {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
         </button>
+
+        {/* Privacy & Citizen Rights Policy */}
+        {onOpenPrivacyModal && (
+          <button
+            onClick={onOpenPrivacyModal}
+            className="p-2 rounded-lg bg-slate-800/80 border border-white/10 text-slate-300 hover:text-cyan-400 hover:bg-slate-800 transition"
+            title="Privacy, Data Protection (Kenya DPA 2019 / GDPR) & Citizen Rights"
+          >
+            <Lock className="w-4 h-4 text-cyan-400" />
+          </button>
+        )}
 
         {/* Live WebSocket Connection Status */}
         <div
