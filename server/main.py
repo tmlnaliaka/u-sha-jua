@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import time
-from fastapi import FastAPI, Request, Response
+from sqlalchemy import text
+from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from config import settings
@@ -173,14 +174,29 @@ app.include_router(shelters_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws_router)
 
 
+SERVER_START_TIME = time.time()
+
 @app.get("/health", tags=["Health"])
 def health_check():
     integrity = audit_service.verify_integrity()
+    db_connected = False
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            db_connected = True
+    except Exception:
+        db_connected = False
+
+    uptime_seconds = round(time.time() - SERVER_START_TIME, 2)
     return {
-        "status": "healthy",
+        "status": "healthy" if db_connected else "degraded",
         "service": "u-SHA-jua Sovereign Backend API",
         "version": "1.4.0-enterprise",
-        "db_dialect": engine.dialect.name,
+        "uptime_seconds": uptime_seconds,
+        "database": {
+            "dialect": engine.dialect.name,
+            "connected": db_connected
+        },
         "security_mode": "strict" if settings.ENFORCE_STRICT_AUTH else "development_authenticated",
         "audit_ledger_blocks": integrity.get("total_blocks", 0),
         "audit_chain_verified": integrity.get("valid", False),
@@ -188,6 +204,21 @@ def health_check():
         "active_ws_connections": ws_manager.active_count,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+@app.get("/healthz", tags=["Health"])
+def liveness_probe():
+    """Kubernetes / Docker liveness probe."""
+    return {"status": "alive"}
+
+@app.get("/readyz", tags=["Health"])
+def readiness_probe():
+    """Kubernetes / Docker readiness probe checking DB connectivity."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "ready"}
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
 
 
 if __name__ == "__main__":
