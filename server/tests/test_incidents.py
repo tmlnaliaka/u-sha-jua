@@ -102,3 +102,21 @@ def test_update_incident_status():
     resolve_res = client.patch(f"/api/v1/incidents/{incident_id}/status", json={"status": "Resolved"})
     assert resolve_res.status_code == 200
     assert resolve_res.json()["status"] == "Resolved"
+
+def test_incident_reporting_idempotency():
+    payload = {
+        "raw_text": "Flooding along Juja road Mathare bridge",
+        "device_lat": -1.2612,
+        "device_lon": 36.8574
+    }
+    headers = {"Idempotency-Key": "test-key-uuid-1234"}
+    res1 = client.post("/api/v1/incidents/report", json=payload, headers=headers)
+    assert res1.status_code == 201
+    id1 = res1.json()["id"]
+
+    # Duplicate submission with identical idempotency key
+    res2 = client.post("/api/v1/incidents/report", json=payload, headers=headers)
+    assert res2.status_code == 201
+    id2 = res2.json()["id"]
+
+    assert id1 == id2

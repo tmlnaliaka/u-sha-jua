@@ -34,6 +34,9 @@ from services.audit_service import audit_service
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
+# In-memory Idempotency Cache for resilient mobile / cellular retry deduplication
+_idempotency_cache: dict[str, dict] = {}
+
 @router.post("/report", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
 async def report_civilian_incident(
     report: IncidentReportRaw,
@@ -47,6 +50,11 @@ async def report_civilian_incident(
     Protected by rate-limiting (60 req/min per IP) and PII masking.
     """
     check_rate_limit(request, max_requests=60, window_seconds=60.0)
+
+    # Check Idempotency-Key header for duplicate submit prevention
+    idempotency_key = request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key")
+    if idempotency_key and idempotency_key in _idempotency_cache:
+        return _idempotency_cache[idempotency_key]
 
     clean_text = sanitize_input(report.raw_text, max_len=4000)
 
@@ -93,6 +101,9 @@ async def report_civilian_incident(
     inc_broadcast = dict(inc_dict)
     inc_broadcast["raw_text"] = mask_pii(inc_dict["raw_text"])
     await ws_manager.broadcast("incident_reported", inc_broadcast)
+
+    if idempotency_key:
+        _idempotency_cache[idempotency_key] = inc_dict
 
     return inc_dict
 
