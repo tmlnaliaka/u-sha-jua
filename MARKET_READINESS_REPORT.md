@@ -135,3 +135,4 @@ server/tests/test_security_and_advanced.py::test_incident_anonymization_privacy_
 | **P1** | Set up external Prometheus / Grafana scraping of `/health` telemetry | DevOps | Day 7–14 |
 | **P2** | Conduct multi-agency tabletop disaster simulation with Red Cross Nairobi | Operations | Day 14–21 |
 | **P2** | Formalize Data Protection Impact Assessment (DPIA) filing with ODPC | Legal / Compliance | Day 21–30 |
+

@@ -54,3 +54,7 @@ Thumbs.db
 *.bak
 *.tmp
 *.docx
+
+# Runtime uploads & media
+server/uploads/*
+!server/uploads/.gitkeep
