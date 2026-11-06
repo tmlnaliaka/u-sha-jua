@@ -96,6 +96,21 @@ def test_telecom_sms_webhook():
     assert data["urgency"] in ["Critical", "Medium", "Low"]
     assert "Gikomba" in data["geocoded_location"]
 
+    # Test signature rejection when secret is set
+    from config import settings
+    orig_secret = settings.SMS_WEBHOOK_SECRET
+    try:
+        settings.SMS_WEBHOOK_SECRET = "carrier-super-secret-key"
+        # 1. Missing or invalid secret -> 401
+        res_bad = client.post("/api/v1/sms/incoming", data=form_data, headers={"X-Webhook-Secret": "wrong"})
+        assert res_bad.status_code == 401
+
+        # 2. Valid secret header -> 200
+        res_good = client.post("/api/v1/sms/incoming", data=form_data, headers={"X-Webhook-Secret": "carrier-super-secret-key"})
+        assert res_good.status_code == 200
+    finally:
+        settings.SMS_WEBHOOK_SECRET = orig_secret
+
 def test_batch_incident_reporting():
     """Validates atomic batch ingestion for high-concurrency SMS relays."""
     batch_payload = {

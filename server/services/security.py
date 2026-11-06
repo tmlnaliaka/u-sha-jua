@@ -3,14 +3,17 @@ import re
 import hmac
 import hashlib
 from typing import Dict, Tuple, Optional
-from fastapi import Request, HTTPException, Security, status
+from fastapi import Request, HTTPException, Security, Depends, status
 from fastapi.security import APIKeyHeader
+from sqlalchemy.orm import Session
+from database import get_db
 from config import settings
 
 # API Key headers
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # Configured roles
+ROLE_CITIZEN = "citizen"
 ROLE_DISPATCHER = "dispatcher"
 ROLE_RESPONDER = "responder"
 ROLE_ADMIN = "admin"
@@ -82,19 +85,47 @@ def check_rate_limit(request: Request, max_requests: int = 60, window_seconds: f
 
 def verify_api_key(required_roles: list[str]):
     """
-    Factory dependency checking for valid X-API-Key with authorized role.
+    Factory dependency checking for valid JWT Bearer token or X-API-Key with authorized role.
     If developer default keys are active, allows seamless local testing.
     """
-    def _verifier(api_key: Optional[str] = Security(api_key_header)) -> str:
-        # In development mode, if key is missing or matches dev key, allow
+    def _verifier(
+        request: Request,
+        api_key: Optional[str] = Security(api_key_header),
+        db: Session = Depends(get_db)
+    ) -> str:
+        # 1. Check for Authorization: Bearer <token>
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1].strip()
+            from services.auth_service import auth_service
+            payload = auth_service.decode_token(token)
+            role = payload.get("role", ROLE_CITIZEN)
+            user_id = payload.get("sub")
+            from models.user import User
+            user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User account not found or has been deactivated."
+                )
+            request.state.user = user
+            request.state.token = token
+
+            if required_roles and role not in required_roles and role != ROLE_ADMIN:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Insufficient permissions. Required roles: {required_roles}, your role: {role}."
+                )
+            return role
+
+        # 2. Check for X-API-Key header
         if not api_key:
-            # Check for Authorization: Bearer <token> fallback
             # If development environment and no strict mode, default to dispatcher
             if getattr(settings, "ENVIRONMENT", "development") == "development" and not settings.ENFORCE_STRICT_AUTH:
                 return ROLE_ADMIN  # Permissive dev mode
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required. Provide valid 'X-API-Key' header."
+                detail="Authentication required. Provide valid 'Authorization: Bearer <token>' or 'X-API-Key' header."
             )
 
         role = API_KEYS.get(api_key)
@@ -119,6 +150,51 @@ def verify_api_key(required_roles: list[str]):
         return role
 
     return _verifier
+
+def get_current_user(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Dependency that strictly resolves the authenticated User from JWT token or authorized dev key."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        api_key = request.headers.get("X-API-Key")
+        if api_key in ["ushajua-dev-dispatcher-key", "ushajua-dev-admin-key"]:
+            from models.user import User
+            dev_user = db.query(User).filter(User.email == "dev_admin@ushajua.org").first()
+            if not dev_user:
+                dev_user = User(
+                    id="dev-admin-system-id",
+                    email="dev_admin@ushajua.org",
+                    full_name="System Dev Admin",
+                    hashed_password="",
+                    role=ROLE_ADMIN,
+                    is_active=True,
+                    is_verified=True
+                )
+                db.add(dev_user)
+                db.commit()
+                db.refresh(dev_user)
+            return dev_user
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Provide 'Authorization: Bearer <token>' header."
+        )
+    token = auth_header.split(" ")[1].strip()
+    from services.auth_service import auth_service
+    payload = auth_service.decode_token(token)
+    user_id = payload.get("sub")
+    from models.user import User
+    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authenticated user account not found or has been deactivated."
+        )
+    request.state.user = user
+    request.state.token = token
+    return user
 
 # PII Redaction utility
 PHONE_REGEX = re.compile(r"(\+?254|0)?\s?([17]\d{2})\s?(\d{3})\s?(\d{3})")

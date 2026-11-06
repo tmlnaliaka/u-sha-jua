@@ -69,47 +69,55 @@ class AuditService:
     def _create_genesis_block(self):
         self._entries.append(self._create_genesis_entry())
 
+    def _sync_with_db(self):
+        """Synchronizes in-memory entries with the persistent database ledger."""
+        if not self._persist_to_db:
+            return
+        try:
+            Base.metadata.create_all(bind=engine)
+            db = SessionLocal()
+            try:
+                rows = db.query(AuditBlock).order_by(AuditBlock.entry_id.asc()).all()
+                if rows:
+                    self._entries = [
+                        AuditEntry(
+                            entry_id=r.entry_id,
+                            timestamp=r.timestamp,
+                            action=r.action,
+                            actor=r.actor,
+                            details=json.loads(r.details_json),
+                            previous_hash=r.previous_hash,
+                            entry_hash=r.entry_hash
+                        )
+                        for r in rows
+                    ]
+                elif not self._entries:
+                    genesis = self._create_genesis_entry()
+                    self._entries = [genesis]
+                    db.add(AuditBlock(
+                        entry_id=genesis.entry_id,
+                        timestamp=genesis.timestamp,
+                        action=genesis.action,
+                        actor=genesis.actor,
+                        details_json=json.dumps(genesis.details, sort_keys=True),
+                        previous_hash=genesis.previous_hash,
+                        entry_hash=genesis.entry_hash
+                    ))
+                    db.commit()
+            finally:
+                db.close()
+        except Exception:
+            if not self._entries:
+                self._create_genesis_block()
+
     def _load_or_init_from_db(self):
         with self._lock:
-            try:
-                Base.metadata.create_all(bind=engine)
-                db = SessionLocal()
-                try:
-                    rows = db.query(AuditBlock).order_by(AuditBlock.entry_id.asc()).all()
-                    if rows:
-                        self._entries = [
-                            AuditEntry(
-                                entry_id=r.entry_id,
-                                timestamp=r.timestamp,
-                                action=r.action,
-                                actor=r.actor,
-                                details=json.loads(r.details_json),
-                                previous_hash=r.previous_hash,
-                                entry_hash=r.entry_hash
-                            )
-                            for r in rows
-                        ]
-                    else:
-                        genesis = self._create_genesis_entry()
-                        self._entries = [genesis]
-                        db.add(AuditBlock(
-                            entry_id=genesis.entry_id,
-                            timestamp=genesis.timestamp,
-                            action=genesis.action,
-                            actor=genesis.actor,
-                            details_json=json.dumps(genesis.details, sort_keys=True),
-                            previous_hash=genesis.previous_hash,
-                            entry_hash=genesis.entry_hash
-                        ))
-                        db.commit()
-                finally:
-                    db.close()
-            except Exception:
-                if not self._entries:
-                    self._create_genesis_block()
+            self._sync_with_db()
 
     def log_event(self, action: str, actor: str, details: Dict[str, Any]) -> AuditEntry:
         with self._lock:
+            if self._persist_to_db:
+                self._sync_with_db()
             entry_id = len(self._entries)
             prev_hash = self._entries[-1].entry_hash
             ts = datetime.now(timezone.utc).isoformat()
@@ -142,12 +150,16 @@ class AuditService:
 
     def get_entries(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         with self._lock:
+            if self._persist_to_db:
+                self._sync_with_db()
             rev = list(reversed(self._entries))
             return [e.to_dict() for e in rev[offset:offset + limit]]
 
     def verify_integrity(self) -> Dict[str, Any]:
         """Validates that no historical block in the chain has been modified or forged."""
         with self._lock:
+            if self._persist_to_db:
+                self._sync_with_db()
             total = len(self._entries)
             if total == 0:
                 return {"valid": True, "total_blocks": 0, "message": "Ledger is empty"}
@@ -157,12 +169,14 @@ class AuditService:
                 if entry.entry_id != idx:
                     return {
                         "valid": False,
+                        "total_blocks": total,
                         "error_at_block": idx,
                         "reason": f"Mismatched block index {entry.entry_id} vs {idx}"
                     }
                 if entry.previous_hash != prev_hash:
                     return {
                         "valid": False,
+                        "total_blocks": total,
                         "error_at_block": idx,
                         "reason": f"Broken hash chain at block {idx}"
                     }
@@ -177,6 +191,7 @@ class AuditService:
                 if entry.entry_hash != expected_hash:
                     return {
                         "valid": False,
+                        "total_blocks": total,
                         "error_at_block": idx,
                         "reason": f"Tampered block hash at block {idx}"
                     }

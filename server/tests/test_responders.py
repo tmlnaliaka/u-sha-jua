@@ -80,3 +80,20 @@ def test_crisis_surge_simulation():
     assert data["status"] == "surge_simulated"
     assert data["injected_count"] == 2
     assert len(data["incidents"]) == 2
+
+
+def test_update_responder_location_with_dispatcher_key():
+    """Validates that dispatchers and field responders can update unit GPS coordinates."""
+    units = client.get("/api/v1/responders").json()
+    assert len(units) > 0
+    unit_id = units[0]["id"]
+
+    res = client.patch(
+        f"/api/v1/responders/{unit_id}/location",
+        json={"latitude": -1.2850, "longitude": 36.8200},
+        headers={"X-API-Key": "ushajua-dev-dispatcher-key"}
+    )
+    assert res.status_code == 200
+    updated = res.json()
+    assert updated["coordinates"]["latitude"] == -1.2850
+    assert updated["coordinates"]["longitude"] == 36.8200

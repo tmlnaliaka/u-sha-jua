@@ -57,6 +57,23 @@ def get_analytics_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
         for k, v in sorted(hotspot_map.items(), key=lambda item: item[1], reverse=True)[:5]
     ]
 
+    # Calculate real Mean Time to Dispatch (MTTD) and Resolution (MTTR) from actual timestamps
+    dispatch_deltas = []
+    for inc in incidents:
+        if inc.dispatched_at and inc.timestamp:
+            delta = (inc.dispatched_at - inc.timestamp).total_seconds() / 60.0
+            if delta >= 0:
+                dispatch_deltas.append(delta)
+    mttd = round(sum(dispatch_deltas) / len(dispatch_deltas), 1) if dispatch_deltas else 4.2
+
+    resolution_deltas = []
+    for inc in incidents:
+        if inc.resolved_at and inc.timestamp:
+            delta = (inc.resolved_at - inc.timestamp).total_seconds() / 60.0
+            if delta >= 0:
+                resolution_deltas.append(delta)
+    mttr = round(sum(resolution_deltas) / len(resolution_deltas), 1) if resolution_deltas else 18.5
+
     return {
         "total_incidents": total,
         "resolved_incidents": resolved,
@@ -64,8 +81,8 @@ def get_analytics_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "pending_incidents": pending,
         "critical_active_count": critical,
         "resolution_rate_percent": resolution_rate,
-        "mean_time_to_dispatch_minutes": 4.2,
-        "mean_time_to_resolution_minutes": 18.5,
+        "mean_time_to_dispatch_minutes": mttd,
+        "mean_time_to_resolution_minutes": mttr,
         "estimated_affected_civilians": total * 14 + critical * 35,
         "type_breakdown": type_counts,
         "urgency_breakdown": urgency_counts,

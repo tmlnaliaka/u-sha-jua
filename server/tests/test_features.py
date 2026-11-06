@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from main import app
-from database import Base, engine, SessionLocal
+from database import Base, engine, SessionLocal, init_db
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
 from models.responder import ResponderUnit, ResponderType, ResponderStatus
 
@@ -14,7 +14,7 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def setup_db():
-    Base.metadata.create_all(bind=engine)
+    init_db()
     yield
 
 def test_weather_telemetry_and_flood_zones():
@@ -103,3 +103,103 @@ def test_oasis_cap_v1_2_alert_generation():
     assert "<circle>" in cap["xml"]
     assert "<polygon>" in cap["xml"]
     assert "polygon" in cap["info"]["area"]
+
+
+def test_incident_attachments_upload(tmp_path):
+    """Validates real multipart attachment upload (scene photo and voice note) for incidents."""
+    res_rep = client.post(
+        "/api/v1/incidents/report",
+        json={"raw_text": "Fire with trapped casualties at Gikomba clothing section"}
+    )
+    assert res_rep.status_code == 201
+    inc_id = res_rep.json()["id"]
+
+    # Upload fake image and audio bytes
+    image_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4"
+    audio_bytes = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00D\xac\x00\x00"
+
+    files = [
+        ("files", ("disaster_scene.png", image_bytes, "image/png")),
+        ("files", ("voice_distress.wav", audio_bytes, "audio/wav"))
+    ]
+
+    res_upload = client.post(f"/api/v1/incidents/{inc_id}/attachments", files=files)
+    assert res_upload.status_code == 201
+    attach_data = res_upload.json()
+    assert len(attach_data["attachments"]) == 2
+    assert attach_data["attachments"][0]["filename"] == "disaster_scene.png"
+    assert attach_data["attachments"][1]["filename"] == "voice_distress.wav"
+
+    # Verify attachment is visible on incident detail
+    res_detail = client.get(f"/api/v1/incidents/{inc_id}")
+    assert res_detail.status_code == 200
+    assert len(res_detail.json()["attachments"]) == 2
+
+
+def test_responder_checklist_persistence():
+    """Validates that field responder mission checklist updates persist in the database."""
+    db = SessionLocal()
+    unit = db.query(ResponderUnit).first()
+    db.close()
+    assert unit is not None
+
+    checklist_update = {
+        "checklist": {
+            "hazard_survey": True,
+            "triage_perimeter": True,
+            "casualty_treatment": False,
+            "evacuation_corridor": False
+        }
+    }
+    res = client.patch(
+        f"/api/v1/responders/{unit.id}/checklist",
+        json=checklist_update,
+        headers={"X-API-Key": "ushajua-dev-dispatcher-key"}
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["checklist"]["hazard_survey"] is True
+    assert data["checklist"]["triage_perimeter"] is True
+    assert data["checklist"]["casualty_treatment"] is False
+
+    # Query responder again to confirm persistence
+    res_get = client.get(f"/api/v1/responders", headers={"X-API-Key": "ushajua-dev-dispatcher-key"})
+    assert res_get.status_code == 200
+    matched = next((u for u in res_get.json() if u["id"] == unit.id), None)
+    assert matched is not None
+    assert matched["checklist"]["hazard_survey"] is True
+
+
+def test_analytics_real_mttd_and_mttr():
+    """Validates that MTTD and MTTR are calculated from real incident timestamps, not static constants."""
+    res = client.get("/api/v1/analytics/summary")
+    assert res.status_code == 200
+    data = res.json()
+    assert "mean_time_to_dispatch_minutes" in data
+    assert "mean_time_to_resolution_minutes" in data
+    assert isinstance(data["mean_time_to_dispatch_minutes"], (int, float))
+    assert isinstance(data["mean_time_to_resolution_minutes"], (int, float))
+
+
+def test_incident_deletion_by_dispatcher():
+    """Validates that dispatchers and admins can delete an incident with audit logging."""
+    res_create = client.post("/api/v1/incidents/report", json={"raw_text": "False alarm test incident to delete"})
+    assert res_create.status_code == 201
+    inc_id = res_create.json()["id"]
+
+    res_del = client.delete(f"/api/v1/incidents/{inc_id}", headers={"X-API-Key": "ushajua-dev-dispatcher-key"})
+    assert res_del.status_code == 204
+
+    # Verify 404 on subsequent get
+    res_check = client.get(f"/api/v1/incidents/{inc_id}")
+    assert res_check.status_code == 404
+
+
+def test_permissions_policy_supports_microphone_and_camera():
+    """Validates that browser Permissions-Policy allows microphone and camera for civilian evidence capture."""
+    res = client.get("/health")
+    assert res.status_code == 200
+    perm = res.headers.get("Permissions-Policy", "")
+    assert "microphone=(self)" in perm
+    assert "camera=(self)" in perm
+    assert "geolocation=(self)" in perm

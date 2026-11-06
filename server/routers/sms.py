@@ -31,7 +31,7 @@ async def incoming_sms_webhook(
     # Rate limit telecom endpoint (up to 300 requests/minute per carrier IP)
     check_rate_limit(request, max_requests=300, window_seconds=60.0)
 
-    # If webhook secret is configured, enforce constant-time cryptographic verification
+    # If webhook secret is configured or in strict mode, enforce constant-time cryptographic verification
     if settings.SMS_WEBHOOK_SECRET:
         secret_header = request.headers.get("X-Webhook-Secret") or request.query_params.get("secret")
         signature_header = request.headers.get("X-Hub-Signature-256") or request.headers.get("X-AT-Signature")
@@ -46,6 +46,11 @@ async def incoming_sms_webhook(
             
         if not is_valid:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature")
+    elif settings.ENFORCE_STRICT_AUTH or settings.ENVIRONMENT == "production":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Telecom gateway webhook unconfigured. SMS_WEBHOOK_SECRET must be set in production."
+        )
 
     raw_text = ""
     sender_phone = None
