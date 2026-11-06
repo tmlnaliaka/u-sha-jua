@@ -2,6 +2,7 @@ from .incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
 from .responder import ResponderUnit, ResponderType, ResponderStatus
 from .shelter import Shelter
 from .audit import AuditBlock
+from .user import User
 
 __all__ = [
     "Incident",
@@ -12,5 +13,6 @@ __all__ = [
     "ResponderType",
     "ResponderStatus",
     "Shelter",
-    "AuditBlock"
+    "AuditBlock",
+    "User"
 ]

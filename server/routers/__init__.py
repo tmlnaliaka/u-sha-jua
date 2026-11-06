@@ -5,6 +5,7 @@ from .responders import router as responders_router
 from .weather import router as weather_router
 from .analytics import router as analytics_router
 from .shelters import router as shelters_router
+from .auth import router as auth_router
 
 __all__ = [
     "incidents_router",
@@ -13,5 +14,6 @@ __all__ = [
     "responders_router",
     "weather_router",
     "analytics_router",
-    "shelters_router"
+    "shelters_router",
+    "auth_router"
 ]
