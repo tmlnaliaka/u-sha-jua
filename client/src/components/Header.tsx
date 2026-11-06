@@ -1,8 +1,9 @@
 import React from 'react';
 import { 
   Radio, Wifi, WifiOff, AlertTriangle, Plus, Volume2, VolumeX, 
-  ShieldAlert, Zap, BarChart3, Smartphone, LifeBuoy, ShieldCheck, Lock
+  ShieldAlert, Zap, BarChart3, Smartphone, LifeBuoy, ShieldCheck, Lock, User
 } from 'lucide-react';
+import { UserProfile } from '../types';
 
 interface HeaderProps {
   connected: boolean;
@@ -15,6 +16,8 @@ interface HeaderProps {
   onOpenResponderPwa: () => void;
   onOpenCommandCenter: () => void;
   onOpenPrivacyModal?: () => void;
+  currentUser: UserProfile | null;
+  onOpenAuthModal: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   criticalCount: number;
@@ -31,6 +34,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenResponderPwa,
   onOpenCommandCenter,
   onOpenPrivacyModal,
+  currentUser,
+  onOpenAuthModal,
   soundEnabled,
   onToggleSound,
   criticalCount,
@@ -163,6 +168,31 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Zap className="w-3.5 h-3.5 text-amber-300 fill-current" />
           <span className="hidden md:inline">SIMULATOR</span>
+        </button>
+
+        {/* User Identity / Authentication Button */}
+        <button
+          onClick={onOpenAuthModal}
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition shadow-sm ${
+            currentUser
+              ? 'bg-blue-600/20 hover:bg-blue-600/30 border-blue-500/40 text-blue-300'
+              : 'bg-slate-800/90 hover:bg-slate-700 border-white/15 text-slate-300 hover:text-white'
+          }`}
+          title={currentUser ? `Signed in as ${currentUser.full_name} (${currentUser.role})` : 'Sign In or Register'}
+        >
+          <User className="w-3.5 h-3.5 text-blue-400" />
+          <span className="hidden sm:inline">
+            {currentUser ? (
+              <span className="flex items-center gap-1">
+                <span className="max-w-[80px] truncate">{currentUser.full_name.split(' ')[0]}</span>
+                <span className="text-[10px] uppercase px-1 py-0.2 rounded bg-blue-500/20 text-blue-300 font-mono">
+                  {currentUser.role}
+                </span>
+              </span>
+            ) : (
+              'SIGN IN'
+            )}
+          </span>
         </button>
 
         {/* Direct Ingestion Button */}

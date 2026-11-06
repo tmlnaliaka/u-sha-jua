@@ -32,6 +32,7 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
     'evacuation_corridor': false,
   });
   const [isTransmittingGps, setIsTransmittingGps] = useState<boolean>(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState<boolean>(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,13 +41,38 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
     }
   }, [responders, selectedUnitId]);
 
-  if (!isOpen) return null;
-
   const currentUnit = responders.find((r) => r.id === selectedUnitId) || responders[0];
   const assignedIncident = incidents.find((i) => i.id === currentUnit?.assigned_incident_id);
 
-  const toggleChecklist = (key: string) => {
-    setChecklist((prev) => ({ ...prev, [key]: !prev[key] }));
+  // Sync checklist state when current unit loads or updates
+  useEffect(() => {
+    if (currentUnit?.checklist) {
+      setChecklist((prev) => ({
+        ...prev,
+        ...currentUnit.checklist
+      }));
+    } else {
+      setChecklist({
+        'hazard_survey': false,
+        'triage_perimeter': false,
+        'casualty_treatment': false,
+        'evacuation_corridor': false,
+      });
+    }
+  }, [currentUnit?.id, currentUnit?.checklist]);
+
+  if (!isOpen) return null;
+
+  const toggleChecklist = async (key: string) => {
+    if (!currentUnit) return;
+    const nextVal = !checklist[key];
+    const updated = { ...checklist, [key]: nextVal };
+    setChecklist(updated);
+    try {
+      await api.updateResponderChecklist(currentUnit.id, { [key]: nextVal });
+    } catch (err) {
+      console.error('Failed to persist tactical checklist:', err);
+    }
   };
 
   const showToast = (msg: string) => {
@@ -55,7 +81,8 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
   };
 
   const handleStatusChange = async (newStatus: ResponderStatus) => {
-    if (!currentUnit) return;
+    if (!currentUnit || isUpdatingStatus) return;
+    setIsUpdatingStatus(true);
     try {
       await onUpdateResponderStatus(currentUnit.id, newStatus);
       if (newStatus === 'OnScene' && assignedIncident) {
@@ -70,6 +97,8 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
       }
     } catch (err) {
       console.error('Status update failed', err);
+    } finally {
+      setIsUpdatingStatus(false);
     }
   };
 
@@ -77,19 +106,35 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
     if (!currentUnit) return;
     setIsTransmittingGps(true);
     try {
-      // Simulate minor field movement towards target or current spot
-      const currentLat = currentUnit.coordinates.latitude;
-      const currentLon = currentUnit.coordinates.longitude;
-      const targetLat = assignedIncident ? assignedIncident.coordinates.latitude : currentLat;
-      const targetLon = assignedIncident ? assignedIncident.coordinates.longitude : currentLon;
+      let targetLat: number | null = null;
+      let targetLon: number | null = null;
 
-      const newLat = currentLat + (targetLat - currentLat) * 0.25;
-      const newLon = currentLon + (targetLon - currentLon) * 0.25;
+      if (navigator.geolocation) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 4000 });
+          });
+          targetLat = pos.coords.latitude;
+          targetLon = pos.coords.longitude;
+        } catch {
+          // Fallback to mission movement simulation if sensor unavailable
+        }
+      }
 
-      await api.updateResponderLocation(currentUnit.id, newLat, newLon);
-      showToast(`📡 Live GPS coordinates broadcasted to central command!`);
+      if (targetLat === null || targetLon === null) {
+        const currentLat = currentUnit.coordinates.latitude;
+        const currentLon = currentUnit.coordinates.longitude;
+        const destLat = assignedIncident ? assignedIncident.coordinates.latitude : currentLat;
+        const destLon = assignedIncident ? assignedIncident.coordinates.longitude : currentLon;
+        targetLat = currentLat + (destLat - currentLat) * 0.25;
+        targetLon = currentLon + (destLon - currentLon) * 0.25;
+      }
+
+      await api.updateResponderLocation(currentUnit.id, targetLat, targetLon);
+      showToast(`📡 Live GPS coordinates broadcasted to central command! (${targetLat.toFixed(4)}, ${targetLon.toFixed(4)})`);
     } catch (err) {
       console.error('GPS transmission failed', err);
+      showToast('❌ GPS broadcast failed');
     } finally {
       setIsTransmittingGps(false);
     }
@@ -275,7 +320,8 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleStatusChange('Dispatched')}
-                className={`py-2 px-1 rounded-xl text-xs font-bold border transition ${
+                disabled={isUpdatingStatus || !currentUnit}
+                className={`py-2 px-1 rounded-xl text-xs font-bold border transition disabled:opacity-50 disabled:cursor-not-allowed ${
                   currentUnit?.status === 'Dispatched'
                     ? 'bg-blue-600 border-blue-400 text-white shadow-lg'
                     : 'bg-slate-800 border-white/10 text-slate-300 hover:bg-slate-700'
@@ -287,7 +333,8 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleStatusChange('OnScene')}
-                className={`py-2 px-1 rounded-xl text-xs font-bold border transition ${
+                disabled={isUpdatingStatus || !currentUnit}
+                className={`py-2 px-1 rounded-xl text-xs font-bold border transition disabled:opacity-50 disabled:cursor-not-allowed ${
                   currentUnit?.status === 'OnScene'
                     ? 'bg-amber-600 border-amber-400 text-white shadow-lg'
                     : 'bg-slate-800 border-white/10 text-slate-300 hover:bg-slate-700'
@@ -299,7 +346,8 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleStatusChange('Available')}
-                className="py-2 px-1 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 shadow-lg transition"
+                disabled={isUpdatingStatus || !currentUnit}
+                className="py-2 px-1 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Resolve & Clear
               </button>

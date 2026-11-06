@@ -3,15 +3,18 @@ import {
   CivilianReportInput,
   GeoJSONFeatureCollection,
   IncidentStatus,
+  ResponderUnit,
   Shelter,
   HazardPerimeterFeature,
   RecommendationResult,
   AuditEntry,
-  AuditLedgerVerification
+  AuditLedgerVerification,
+  UserProfile,
+  AuthSession
 } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
 
 export interface BatchReportResponse {
   total_processed: number;
@@ -28,6 +31,21 @@ export interface CacheMetrics {
   nlp_cache_misses: number;
 }
 
+// Session tokens & API key defaults
+const AUTH_TOKEN_KEY = 'ushajua_access_token_v1';
+const REFRESH_TOKEN_KEY = 'ushajua_refresh_token_v1';
+const USER_KEY = 'ushajua_user_v1';
+
+let currentAuthToken: string | null = localStorage.getItem(AUTH_TOKEN_KEY);
+let currentUser: UserProfile | null = (() => {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+})();
+
 // Development default key for tactical dispatcher commands
 let currentApiKey: string = 'ushajua-dev-dispatcher-key';
 const OFFLINE_OUTBOX_KEY = 'ushajua_offline_outbox_v1';
@@ -43,17 +61,207 @@ export interface QueuedOfflineReport {
   timestamp: string;
 }
 
+function formatErrorMessage(err: any): string {
+  if (!err) return 'Request failed';
+  if (typeof err === 'string') return err;
+  if (typeof err.detail === 'string') return err.detail;
+  if (Array.isArray(err.detail)) {
+    return err.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ');
+  }
+  return err.message || JSON.stringify(err);
+}
+
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   };
-  if (currentApiKey) {
+  if (currentAuthToken) {
+    headers['Authorization'] = `Bearer ${currentAuthToken}`;
+  } else if (currentApiKey) {
     headers['X-API-Key'] = currentApiKey;
   }
   return headers;
 }
 
 export const api = {
+  getAuthToken(): string | null {
+    return currentAuthToken;
+  },
+
+  getRefreshToken(): string | null {
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
+  },
+
+  getUser(): UserProfile | null {
+    return currentUser;
+  },
+
+  setSession(session: AuthSession) {
+    currentAuthToken = session.access_token;
+    currentUser = session.user;
+    localStorage.setItem(AUTH_TOKEN_KEY, session.access_token);
+    localStorage.setItem(REFRESH_TOKEN_KEY, session.refresh_token);
+    localStorage.setItem(USER_KEY, JSON.stringify(session.user));
+    window.dispatchEvent(new CustomEvent('ushajua:auth-changed', { detail: session.user }));
+  },
+
+  clearSession() {
+    currentAuthToken = null;
+    currentUser = null;
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    window.dispatchEvent(new CustomEvent('ushajua:auth-changed', { detail: null }));
+  },
+
+  async signup(payload: { email: string; phone?: string; password: string; full_name: string; role?: string }): Promise<UserProfile> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Signup failed' }));
+      throw new Error(formatErrorMessage(err));
+    }
+    return res.json();
+  },
+
+  async login(username_or_email: string, password: string): Promise<AuthSession> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: username_or_email, username_or_email, password })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Invalid credentials' }));
+      throw new Error(formatErrorMessage(err));
+    }
+    const session: AuthSession = await res.json();
+    this.setSession(session);
+    return session;
+  },
+
+  async refreshToken(): Promise<string> {
+    const refresh_token = this.getRefreshToken();
+    if (!refresh_token) {
+      this.clearSession();
+      throw new Error('No refresh token available');
+    }
+    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token })
+    });
+    if (!res.ok) {
+      this.clearSession();
+      throw new Error('Session expired, please log in again');
+    }
+    const data = await res.json();
+    currentAuthToken = data.access_token;
+    localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
+    return data.access_token;
+  },
+
+  async logout(): Promise<void> {
+    try {
+      if (currentAuthToken) {
+        await fetch(`${API_BASE}/api/v1/auth/logout`, {
+          method: 'POST',
+          headers: getAuthHeaders()
+        });
+      }
+    } catch (e) {
+      console.warn('Logout network error', e);
+    } finally {
+      this.clearSession();
+    }
+  },
+
+  async getMe(): Promise<UserProfile> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      if (res.status === 401) {
+        // try refreshing once
+        try {
+          await this.refreshToken();
+          const retryRes = await fetch(`${API_BASE}/api/v1/auth/me`, {
+            headers: getAuthHeaders()
+          });
+          if (retryRes.ok) {
+            const user = await retryRes.json();
+            currentUser = user;
+            localStorage.setItem(USER_KEY, JSON.stringify(user));
+            return user;
+          }
+        } catch {}
+        this.clearSession();
+      }
+      throw new Error('Failed to fetch user profile');
+    }
+    const user = await res.json();
+    currentUser = user;
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    return user;
+  },
+
+  async forgotPassword(email: string): Promise<{ message: string; simulated_reset_token?: string }> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to request reset' }));
+      throw new Error(err.detail || 'Password reset request failed');
+    }
+    return res.json();
+  },
+
+  async resetPassword(token: string, new_password: string): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, new_password })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Password reset failed' }));
+      throw new Error(err.detail || 'Password reset failed');
+    }
+    return res.json();
+  },
+
+  async getUserProfile(userId: string): Promise<UserProfile> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/users/${userId}`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Access denied' }));
+      throw new Error(err.detail || 'Failed to fetch user profile');
+    }
+    return res.json();
+  },
+
+  async updateUserProfile(userId: string, updates: Partial<UserProfile>): Promise<UserProfile> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/users/${userId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Update failed' }));
+      throw new Error(err.detail || 'Failed to update profile');
+    }
+    const updated = await res.json();
+    if (currentUser && currentUser.id === updated.id) {
+      currentUser = updated;
+      localStorage.setItem(USER_KEY, JSON.stringify(updated));
+    }
+    return updated;
+  },
+
   setApiKey(key: string) {
     currentApiKey = key;
   },
@@ -188,6 +396,19 @@ export const api = {
     return res.json();
   },
 
+  async updateIncident(id: string, updates: Partial<Incident>): Promise<Incident> {
+    const res = await fetch(`${API_BASE}/api/v1/incidents/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update incident' }));
+      throw new Error(err.detail || 'Failed to update incident');
+    }
+    return res.json();
+  },
+
   async updateStatus(id: string, status: IncidentStatus): Promise<Incident> {
     const res = await fetch(`${API_BASE}/api/v1/incidents/${id}/status`, {
       method: 'PATCH',
@@ -195,6 +416,53 @@ export const api = {
       body: JSON.stringify({ status }),
     });
     if (!res.ok) throw new Error('Failed to update status');
+    return res.json();
+  },
+
+  async deleteIncident(id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/v1/incidents/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to delete incident' }));
+      throw new Error(err.detail || 'Failed to delete incident');
+    }
+  },
+
+  async anonymizeIncident(id: string): Promise<Incident> {
+    const res = await fetch(`${API_BASE}/api/v1/incidents/${encodeURIComponent(id)}/anonymize`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to anonymize incident' }));
+      throw new Error(err.detail || 'Failed to anonymize incident');
+    }
+    return res.json();
+  },
+
+  async uploadAttachments(incidentId: string, files: (File | Blob)[], fileNames?: string[]): Promise<any> {
+    const formData = new FormData();
+    files.forEach((file, index) => {
+      const name = fileNames?.[index] || (file instanceof File ? file.name : `attachment_${Date.now()}_${index}.webm`);
+      formData.append('files', file, name);
+    });
+
+    const headers: Record<string, string> = {};
+    if (currentApiKey) {
+      headers['X-API-Key'] = currentApiKey;
+    }
+
+    const res = await fetch(`${API_BASE}/api/v1/incidents/${encodeURIComponent(incidentId)}/attachments`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to upload attachments' }));
+      throw new Error(err.detail || 'Failed to upload attachments');
+    }
     return res.json();
   },
 
@@ -273,6 +541,45 @@ export const api = {
     return res.json();
   },
 
+  async updateResponderChecklist(responderId: string, checklist: Record<string, boolean>): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/responders/${responderId}/checklist`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ checklist }),
+    });
+    if (!res.ok) throw new Error('Failed to update responder checklist');
+    return res.json();
+  },
+
+  async createResponder(payload: {
+    callsign: string;
+    unit_type: string;
+    base_station: string;
+    coordinates: { latitude: number; longitude: number };
+  }): Promise<ResponderUnit> {
+    const res = await fetch(`${API_BASE}/api/v1/responders`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to create responder unit' }));
+      throw new Error(err.detail || 'Failed to create responder unit');
+    }
+    return res.json();
+  },
+
+  async deleteResponder(responderId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/v1/responders/${encodeURIComponent(responderId)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to decommission responder' }));
+      throw new Error(err.detail || 'Failed to decommission responder');
+    }
+  },
+
   async getShelters(onlyWithCapacity: boolean = false): Promise<Shelter[]> {
     const res = await fetch(`${API_BASE}/api/v1/shelters?only_with_capacity=${onlyWithCapacity}`);
     if (!res.ok) throw new Error('Failed to fetch evacuation shelters');
@@ -293,6 +600,63 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to update shelter occupancy');
     return res.json();
+  },
+
+  async createShelter(payload: {
+    name: string;
+    location_name: string;
+    coordinates: { latitude: number; longitude: number };
+    capacity_total: number;
+    occupancy_current?: number;
+    water_supply_status?: string;
+    medical_post_available?: boolean;
+    contact_phone?: string;
+  }): Promise<Shelter> {
+    const res = await fetch(`${API_BASE}/api/v1/shelters`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to create shelter' }));
+      throw new Error(err.detail || 'Failed to create shelter');
+    }
+    return res.json();
+  },
+
+  async updateShelter(shelterId: string, updates: Partial<Shelter>): Promise<Shelter> {
+    const res = await fetch(`${API_BASE}/api/v1/shelters/${encodeURIComponent(shelterId)}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update shelter' }));
+      throw new Error(err.detail || 'Failed to update shelter');
+    }
+    return res.json();
+  },
+
+  async deleteShelter(shelterId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/v1/shelters/${encodeURIComponent(shelterId)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to delete shelter' }));
+      throw new Error(err.detail || 'Failed to delete shelter');
+    }
+  },
+
+  async deleteUserAccount(userId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to deactivate account' }));
+      throw new Error(err.detail || 'Failed to deactivate account');
+    }
   },
 
   async getWeatherTelemetry(): Promise<any> {

@@ -26,16 +26,19 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
   // Shelters state
   const [shelters, setShelters] = useState<Shelter[]>([]);
   const [loadingShelters, setLoadingShelters] = useState(false);
+  const [updatingOccupancyId, setUpdatingOccupancyId] = useState<string | null>(null);
 
   // Recommendation state
   const [selectedIncidentId, setSelectedIncidentId] = useState<string>('');
   const [recommendation, setRecommendation] = useState<RecommendationResult | null>(null);
   const [loadingRec, setLoadingRec] = useState(false);
+  const [isAutoDispatching, setIsAutoDispatching] = useState(false);
 
   // Audit state
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [auditVerification, setAuditVerification] = useState<AuditLedgerVerification | null>(null);
   const [loadingAudit, setLoadingAudit] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   // Mesh bundle state
   const [offlineBundle, setOfflineBundle] = useState<any | null>(null);
@@ -77,18 +80,22 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
   };
 
   const handleUpdateOccupancy = async (shelterId: string, current: number, delta: number) => {
+    if (updatingOccupancyId === shelterId) return; // Prevent double submit
     const newCount = Math.max(0, current + delta);
+    setUpdatingOccupancyId(shelterId);
     try {
       await api.updateShelterOccupancy(shelterId, newCount);
       showToast(`Updated shelter occupancy to ${newCount}`);
-      loadShelters();
+      await loadShelters();
     } catch (e: any) {
       showToast('Failed to update occupancy');
+    } finally {
+      setUpdatingOccupancyId(null);
     }
   };
 
   const handleCalculateRecommendation = async () => {
-    if (!selectedIncidentId) return;
+    if (!selectedIncidentId || loadingRec) return;
     setLoadingRec(true);
     try {
       const rec = await api.recommendResponder(selectedIncidentId);
@@ -101,18 +108,23 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
   };
 
   const handleExecuteAutoDispatch = async () => {
-    if (!selectedIncidentId) return;
+    if (!selectedIncidentId || isAutoDispatching) return;
+    setIsAutoDispatching(true);
     try {
       const res = await api.autoDispatchResponder(selectedIncidentId);
       showToast(`Autonomous Dispatch: Unit ${res.callsign} assigned!`);
       onIncidentUpdated();
-      handleCalculateRecommendation();
+      await handleCalculateRecommendation();
     } catch (e: any) {
       showToast(e.message || 'Auto-dispatch failed');
+    } finally {
+      setIsAutoDispatching(false);
     }
   };
 
   const handleVerifyChain = async () => {
+    if (isVerifying) return;
+    setIsVerifying(true);
     try {
       const ver = await api.verifyAuditTrail();
       setAuditVerification(ver);
@@ -123,6 +135,8 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
       }
     } catch (e) {
       showToast('Verification failed');
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -240,54 +254,62 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {shelters.map((s) => (
-                  <div key={s.id} className="p-4 rounded-xl bg-slate-900/80 border border-white/10 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h4 className="font-bold text-white text-sm">{s.name}</h4>
-                        <p className="text-[11px] text-cyan-400 font-mono">{s.location_name}</p>
+              {shelters.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 bg-slate-900/50 rounded-xl border border-white/5">
+                  No registered evacuation shelters available.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {shelters.map((s) => (
+                    <div key={s.id} className="p-4 rounded-xl bg-slate-900/80 border border-white/10 space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h4 className="font-bold text-white text-sm">{s.name}</h4>
+                          <p className="text-[11px] text-cyan-400 font-mono">{s.location_name}</p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          s.available_space > 100 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                        }`}>
+                          {s.occupancy_percent}% OCCUPIED
+                        </span>
                       </div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        s.available_space > 100 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
-                      }`}>
-                        {s.occupancy_percent}% OCCUPIED
-                      </span>
-                    </div>
 
-                    {/* Progress Bar */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px] text-slate-400">
-                        <span>Occupancy: {s.occupancy_current} / {s.capacity_total}</span>
-                        <span className="font-mono text-emerald-400">{s.available_space} Beds Open</span>
+                      {/* Progress Bar */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[11px] text-slate-400">
+                          <span>Occupancy: {s.occupancy_current} / {s.capacity_total}</span>
+                          <span className="font-mono text-emerald-400">{s.available_space} Beds Open</span>
+                        </div>
+                        <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              s.occupancy_percent > 85 ? 'bg-red-500' : s.occupancy_percent > 60 ? 'bg-amber-500' : 'bg-cyan-500'
+                            }`}
+                            style={{ width: `${Math.min(100, s.occupancy_percent)}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            s.occupancy_percent > 85 ? 'bg-red-500' : s.occupancy_percent > 60 ? 'bg-amber-500' : 'bg-cyan-500'
-                          }`}
-                          style={{ width: `${Math.min(100, s.occupancy_percent)}%` }}
-                        />
-                      </div>
-                    </div>
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-white/5">
-                      <span>Water: <span className="text-white font-medium">{s.water_supply_status}</span></span>
-                      <span>Medical: <span className="text-white font-medium">{s.medical_post_available ? '✓ Active Post' : '✗ None'}</span></span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleUpdateOccupancy(s.id, s.occupancy_current, -10)}
-                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-white"
-                        >-10</button>
-                        <button
-                          onClick={() => handleUpdateOccupancy(s.id, s.occupancy_current, 10)}
-                          className="px-2 py-0.5 rounded bg-cyan-700 hover:bg-cyan-600 text-white"
-                        >+10</button>
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-white/5">
+                        <span>Water: <span className="text-white font-medium">{s.water_supply_status}</span></span>
+                        <span>Medical: <span className="text-white font-medium">{s.medical_post_available ? '✓ Active Post' : '✗ None'}</span></span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleUpdateOccupancy(s.id, s.occupancy_current, -10)}
+                            disabled={updatingOccupancyId === s.id}
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition"
+                          >-10</button>
+                          <button
+                            onClick={() => handleUpdateOccupancy(s.id, s.occupancy_current, 10)}
+                            disabled={updatingOccupancyId === s.id}
+                            className="px-2 py-0.5 rounded bg-cyan-700 hover:bg-cyan-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition"
+                          >+10</button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -345,10 +367,11 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
                         </div>
                         <button
                           onClick={handleExecuteAutoDispatch}
-                          className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-lg shadow-emerald-950/60"
+                          disabled={isAutoDispatching}
+                          className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-lg shadow-emerald-950/60 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Send className="w-3.5 h-3.5" />
-                          Authorize Auto-Dispatch
+                          {isAutoDispatching ? 'Dispatching...' : 'Authorize Auto-Dispatch'}
                         </button>
                       </div>
                     </div>
@@ -397,29 +420,36 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
                   )}
                   <button
                     onClick={handleVerifyChain}
-                    className="px-3 py-1 rounded bg-cyan-700 hover:bg-cyan-600 text-white font-semibold transition"
+                    disabled={isVerifying}
+                    className="px-3 py-1 rounded bg-cyan-700 hover:bg-cyan-600 text-white font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Re-Verify Chain Integrity
+                    {isVerifying ? 'Verifying Chain...' : 'Re-Verify Chain Integrity'}
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                {auditEntries.map((e) => (
-                  <div key={e.entry_id} className="p-3 rounded-lg bg-slate-900/70 border border-white/5 font-mono text-[11px] space-y-1">
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span className="text-cyan-400 font-bold">BLOCK #{e.entry_id} — {e.action}</span>
-                      <span>{new Date(e.timestamp).toLocaleTimeString()} ({e.actor})</span>
+              {auditEntries.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 bg-slate-900/50 rounded-xl border border-white/5">
+                  No cryptographic audit entries recorded yet.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                  {auditEntries.map((e) => (
+                    <div key={e.entry_id} className="p-3 rounded-lg bg-slate-900/70 border border-white/5 font-mono text-[11px] space-y-1">
+                      <div className="flex items-center justify-between text-slate-400">
+                        <span className="text-cyan-400 font-bold">BLOCK #{e.entry_id} — {e.action}</span>
+                        <span>{new Date(e.timestamp).toLocaleTimeString()} ({e.actor})</span>
+                      </div>
+                      <p className="text-slate-300 font-sans text-xs">
+                        {JSON.stringify(e.details)}
+                      </p>
+                      <div className="text-[10px] text-slate-500 truncate pt-1 border-t border-white/5">
+                        Hash: <span className="text-slate-400">{e.entry_hash}</span>
+                      </div>
                     </div>
-                    <p className="text-slate-300 font-sans text-xs">
-                      {JSON.stringify(e.details)}
-                    </p>
-                    <div className="text-[10px] text-slate-500 truncate pt-1 border-t border-white/5">
-                      Hash: <span className="text-slate-400">{e.entry_hash}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

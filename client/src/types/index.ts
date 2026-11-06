@@ -10,6 +10,14 @@ export interface Coordinates {
   longitude: number;
 }
 
+export interface IncidentAttachment {
+  filename: string;
+  path: string;
+  file_type: string;
+  size: number;
+  uploaded_at?: string;
+}
+
 export interface Incident {
   id: string;
   raw_text: string;
@@ -22,6 +30,9 @@ export interface Incident {
   };
   status: IncidentStatus;
   timestamp: string;
+  dispatched_at?: string;
+  resolved_at?: string;
+  attachments?: IncidentAttachment[];
 }
 
 export interface ResponderUnit {
@@ -34,6 +45,7 @@ export interface ResponderUnit {
   assigned_incident_id?: string;
   distance_km?: number;
   eta_minutes?: number;
+  checklist?: Record<string, boolean>;
 }
 
 export interface ActiveRoute {
@@ -241,4 +253,26 @@ export interface CapAlertResponse {
     };
   };
   xml: string;
+}
+
+export type UserRole = 'citizen' | 'responder' | 'dispatcher' | 'admin';
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  phone?: string | null;
+  full_name: string;
+  role: UserRole;
+  is_active: boolean;
+  is_verified: boolean;
+  created_at?: string;
+  last_login_at?: string;
+}
+
+export interface AuthSession {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in_seconds: number;
+  user: UserProfile;
 }

@@ -100,3 +100,4 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) =
     </div>
   );
 };
+

@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { Incident, IncidentStatus, IncidentType } from '../types';
-import { Search, Send, CheckCircle2, MapPin, AlertOctagon, Flame, Waves, Building2, Zap } from 'lucide-react';
-import { api } from '../services/api';
+import { Search, Send, CheckCircle2, MapPin, AlertOctagon, Flame, Waves, Building2, Zap, Trash2, ShieldAlert, Paperclip, Volume2, Camera } from 'lucide-react';
+import { api, API_BASE } from '../services/api';
 
 interface DispatchBoardProps {
   incidents: Incident[];
   selectedIncident: Incident | null;
   onSelectIncident: (incident: Incident) => void;
   onUpdateStatus: (id: string, status: IncidentStatus) => void;
+  onDeleteIncident?: (id: string) => void;
+  onAnonymizeIncident?: (id: string) => void;
 }
 
 export const DispatchBoard: React.FC<DispatchBoardProps> = ({
@@ -15,6 +17,8 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
   selectedIncident,
   onSelectIncident,
   onUpdateStatus,
+  onDeleteIncident,
+  onAnonymizeIncident,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('ALL');
@@ -113,8 +117,28 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
       {/* Incident List */}
       <div className="flex-1 overflow-y-auto divide-y divide-white/5">
         {filteredIncidents.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 text-xs">
-            No incidents match the active search or filters.
+          <div className="p-8 text-center flex flex-col items-center justify-center space-y-3 my-auto">
+            <div className="w-10 h-10 rounded-full bg-slate-800/80 border border-white/10 flex items-center justify-center text-slate-400">
+              <Search className="w-5 h-5 text-slate-400" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-200">No distress incidents match criteria</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Try altering your keywords or relaxing type and urgency filters.</p>
+            </div>
+            {(searchTerm || filterType !== 'ALL' || filterUrgency !== 'ALL' || filterStatus !== 'ALL') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  setFilterType('ALL');
+                  setFilterUrgency('ALL');
+                  setFilterStatus('ALL');
+                }}
+                className="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/40 text-blue-300 text-xs font-semibold transition"
+              >
+                Reset All Filters
+              </button>
+            )}
           </div>
         ) : (
           filteredIncidents.map((incident) => {
@@ -164,6 +188,119 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
                     {incident.raw_text}
                   </p>
                 </div>
+
+                {/* Attachments Section if present */}
+                {incident.attachments && incident.attachments.length > 0 && (
+                  <div className="p-2 rounded-lg bg-black/40 border border-white/10 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                      <Paperclip className="w-3 h-3 text-blue-400" />
+                      Scene Evidence ({incident.attachments.length})
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {incident.attachments.map((att, attIdx) => {
+                        if (!att) return null;
+                        const rawPath = typeof att === 'string' ? att : (att.path || '');
+                        const fileUrl = rawPath ? (rawPath.startsWith('http') ? rawPath : `${API_BASE}${rawPath}`) : '';
+                        const fileName = (typeof att === 'object' && att.filename) ? att.filename : `attachment_${attIdx}`;
+                        const fileType = (typeof att === 'object' && att.file_type) ? att.file_type : '';
+                        const isAudio = fileType.includes('audio') || fileName.endsWith('.webm') || fileName.endsWith('.wav');
+                        const isImage = fileType.includes('image') || fileName.endsWith('.png') || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg');
+
+                        if (isImage) {
+                          return (
+                            <a
+                              key={attIdx}
+                              href={fileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="group relative block w-14 h-14 rounded overflow-hidden border border-white/20 bg-slate-900 shrink-0 hover:border-blue-400 transition"
+                            >
+                              <img src={fileUrl} alt={att.filename} className="w-full h-full object-cover group-hover:scale-105 transition" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                <Camera className="w-3 h-3 text-white" />
+                              </div>
+                            </a>
+                          );
+                        }
+
+                        if (isAudio) {
+                          return (
+                            <div key={attIdx} className="flex items-center gap-1.5 bg-slate-800/80 px-2 py-1 rounded border border-white/10">
+                              <Volume2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <audio controls src={fileUrl} className="h-6 w-36" />
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <a
+                            key={attIdx}
+                            href={fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-blue-400 hover:underline flex items-center gap-1 font-mono"
+                          >
+                            <Paperclip className="w-3 h-3" /> {att.filename}
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Expanded Details when selected */}
+                {isSelected && (
+                  <div className="pt-2 border-t border-white/10 space-y-2 animate-in fade-in" onClick={(e) => e.stopPropagation()}>
+                    {(incident.dispatched_at || incident.resolved_at) && (
+                      <div className="text-[10px] font-mono text-slate-400 flex flex-wrap gap-2">
+                        {incident.dispatched_at && (
+                          <span className="text-blue-300">
+                            Dispatched: {new Date(incident.dispatched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </span>
+                        )}
+                        {incident.resolved_at && (
+                          <span className="text-emerald-300">
+                            Resolved: {new Date(incident.resolved_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-1.5 pt-1">
+                      {onAnonymizeIncident && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm('Scrub personal civilian identifiers under Kenya DPA 2019 / GDPR Right to Erasure?')) {
+                              onAnonymizeIncident(incident.id);
+                            }
+                          }}
+                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-mono flex items-center gap-1 border border-white/10 transition"
+                          title="Anonymize personal data under Kenya Data Protection Act 2019"
+                        >
+                          <ShieldAlert className="w-3 h-3 text-amber-400" />
+                          Anonymize (DPA 2019)
+                        </button>
+                      )}
+
+                      {onDeleteIncident && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm('Permanently purge this incident record from tactical storage?')) {
+                              onDeleteIncident(incident.id);
+                            }
+                          }}
+                          className="px-2 py-1 rounded bg-red-950/60 hover:bg-red-900 text-red-300 hover:text-red-100 text-[10px] font-mono flex items-center gap-1 border border-red-500/30 transition"
+                          title="Purge incident record"
+                        >
+                          <Trash2 className="w-3 h-3 text-red-400" />
+                          Purge
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Dispatch Controls & Status */}
                 <div className="flex items-center justify-between pt-1 border-t border-white/5">
