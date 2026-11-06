@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from database import get_db
 from models.shelter import Shelter
+from schemas.shelter import ShelterCreate, ShelterUpdate, ShelterOccupancyUpdate, ShelterResponse
 from services.security import verify_api_key, ROLE_DISPATCHER, ROLE_ADMIN
 from services.audit_service import audit_service
 from services.websocket_manager import ws_manager
@@ -100,10 +101,7 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
     return round(r * c, 2)
 
-class ShelterOccupancyUpdate(BaseModel):
-    occupancy_current: int = Field(..., ge=0, description="New count of sheltered civilians")
-
-@router.get("")
+@router.get("", response_model=List[ShelterResponse])
 def list_shelters(
     only_with_capacity: bool = Query(False, description="Filter for shelters with remaining space"),
     db: Session = Depends(get_db)
@@ -116,6 +114,114 @@ def list_shelters(
     if only_with_capacity:
         results = [s for s in results if s["available_space"] > 0]
     return results
+
+@router.post("", response_model=ShelterResponse, status_code=status.HTTP_201_CREATED)
+async def create_shelter(
+    shelter_in: ShelterCreate,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """Registers a new emergency evacuation shelter or safe haven point."""
+    if shelter_in.occupancy_current > shelter_in.capacity_total:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Current occupancy cannot exceed total shelter capacity"
+        )
+
+    new_shelter = Shelter(
+        id=str(uuid.uuid4()),
+        name=shelter_in.name.strip(),
+        location_name=shelter_in.location_name.strip(),
+        latitude=shelter_in.coordinates.latitude,
+        longitude=shelter_in.coordinates.longitude,
+        capacity_total=shelter_in.capacity_total,
+        occupancy_current=shelter_in.occupancy_current,
+        water_supply_status=shelter_in.water_supply_status,
+        medical_post_available=shelter_in.medical_post_available,
+        contact_phone=shelter_in.contact_phone.strip(),
+        is_active=True
+    )
+    db.add(new_shelter)
+    db.commit()
+    db.refresh(new_shelter)
+
+    d = new_shelter.to_dict()
+    audit_service.log_event(
+        action="SHELTER_CREATED",
+        actor=role,
+        details={"shelter_id": new_shelter.id, "name": new_shelter.name, "capacity": new_shelter.capacity_total}
+    )
+
+    await ws_manager.broadcast("shelter_created", d)
+    return d
+
+@router.patch("/{shelter_id}", response_model=ShelterResponse)
+async def update_shelter(
+    shelter_id: str,
+    update: ShelterUpdate,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """Updates evacuation shelter metadata, facilities, capacity, or operational state."""
+    shelter = db.query(Shelter).filter(Shelter.id == shelter_id).first()
+    if not shelter:
+        raise HTTPException(status_code=404, detail="Shelter not found")
+
+    if update.name is not None:
+        shelter.name = update.name.strip()
+    if update.location_name is not None:
+        shelter.location_name = update.location_name.strip()
+    if update.coordinates is not None:
+        shelter.latitude = update.coordinates.latitude
+        shelter.longitude = update.coordinates.longitude
+    if update.capacity_total is not None:
+        shelter.capacity_total = update.capacity_total
+    if update.occupancy_current is not None:
+        shelter.occupancy_current = update.occupancy_current
+    if update.water_supply_status is not None:
+        shelter.water_supply_status = update.water_supply_status
+    if update.medical_post_available is not None:
+        shelter.medical_post_available = update.medical_post_available
+    if update.contact_phone is not None:
+        shelter.contact_phone = update.contact_phone.strip()
+    if update.is_active is not None:
+        shelter.is_active = update.is_active
+
+    db.commit()
+    db.refresh(shelter)
+
+    d = shelter.to_dict()
+    audit_service.log_event(
+        action="SHELTER_UPDATED",
+        actor=role,
+        details={"shelter_id": shelter.id, "name": shelter.name}
+    )
+
+    await ws_manager.broadcast("shelter_updated", d)
+    return d
+
+@router.delete("/{shelter_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_shelter(
+    shelter_id: str,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """Deactivates / soft-deletes an evacuation shelter from active disaster response."""
+    shelter = db.query(Shelter).filter(Shelter.id == shelter_id).first()
+    if not shelter:
+        raise HTTPException(status_code=404, detail="Shelter not found")
+
+    shelter.is_active = False
+    db.commit()
+
+    audit_service.log_event(
+        action="SHELTER_DEACTIVATED",
+        actor=role,
+        details={"shelter_id": shelter.id, "name": shelter.name}
+    )
+
+    await ws_manager.broadcast("shelter_deleted", {"id": shelter_id})
+    return None
 
 @router.get("/nearest")
 def find_nearest_shelter(

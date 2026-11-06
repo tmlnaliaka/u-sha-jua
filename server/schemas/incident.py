@@ -43,6 +43,21 @@ class IncidentCreate(BaseModel):
 class IncidentStatusUpdate(BaseModel):
     status: IncidentStatus
 
+class IncidentUpdate(BaseModel):
+    raw_text: Optional[str] = Field(None, min_length=3, max_length=4000)
+    incident_type: Optional[IncidentType] = None
+    urgency_level: Optional[UrgencyLevel] = None
+    location_name: Optional[str] = Field(None, max_length=255)
+    coordinates: Optional[CoordinateModel] = None
+    status: Optional[IncidentStatus] = None
+
+    @field_validator("raw_text", "location_name")
+    @classmethod
+    def sanitize_optional_text(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            return clean_script_tags(v)
+        return None
+
 class IncidentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,6 +69,9 @@ class IncidentResponse(BaseModel):
     coordinates: CoordinateModel
     status: IncidentStatus
     timestamp: datetime
+    dispatched_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    attachments: Optional[List[Dict[str, Any]]] = []
 
 class GeoJSONGeometry(BaseModel):
     type: str = "Point"

@@ -3,15 +3,16 @@ import math
 import asyncio
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Response, Request, File, UploadFile
 from sqlalchemy.orm import Session
 from database import get_db
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
-from models.responder import ResponderUnit
+from models.responder import ResponderUnit, ResponderStatus
 from models.shelter import Shelter
 from schemas.incident import (
     IncidentReportRaw,
     IncidentCreate,
+    IncidentUpdate,
     IncidentResponse,
     IncidentStatusUpdate,
     GeoJSONFeatureCollection,
@@ -224,13 +225,17 @@ def get_incidents(
     incident_type: Optional[IncidentType] = None,
     urgency_level: Optional[UrgencyLevel] = None,
     status_filter: Optional[IncidentStatus] = Query(None, alias="status"),
+    q: Optional[str] = Query(None, description="Search keyword in location_name or raw_text"),
+    sort_by: Optional[str] = Query("timestamp", description="Column to sort by: timestamp, urgency_level, status"),
+    order: Optional[str] = Query("desc", description="Sort direction: asc or desc"),
     limit: int = Query(50, ge=1, le=1000, description="Pagination page limit"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     response: Response = None,
     db: Session = Depends(get_db)
 ):
     """
-    Retrieves paginated list of active/historical incidents with index-optimized filtering.
+    Retrieves paginated list of active/historical incidents with index-optimized filtering,
+    full-text keyword search, and dynamic sorting.
     Sets X-Total-Count response header for client pagination tracking.
     """
     query = db.query(Incident)
@@ -240,14 +245,75 @@ def get_incidents(
         query = query.filter(Incident.urgency_level == urgency_level)
     if status_filter:
         query = query.filter(Incident.status == status_filter)
+    if q and q.strip():
+        search_term = f"%{q.strip()}%"
+        query = query.filter(
+            (Incident.location_name.ilike(search_term)) | 
+            (Incident.raw_text.ilike(search_term))
+        )
 
     total_count = query.count()
     if response:
         response.headers["X-Total-Count"] = str(total_count)
 
-    query = query.order_by(Incident.timestamp.desc())
+    # Dynamic sorting
+    sort_field = getattr(Incident, sort_by, Incident.timestamp) if sort_by in ["timestamp", "urgency_level", "status", "location_name"] else Incident.timestamp
+    if order and order.lower() == "asc":
+        query = query.order_by(sort_field.asc())
+    else:
+        query = query.order_by(sort_field.desc())
+
     results = query.offset(offset).limit(limit).all()
     return [r.to_dict() for r in results]
+
+@router.patch("/{incident_id}", response_model=IncidentResponse)
+async def update_incident(
+    incident_id: str,
+    update: IncidentUpdate,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """Updates incident attributes (urgency, location, raw text, type). Requires Dispatcher or Admin role."""
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    changes = {}
+    if update.raw_text is not None:
+        incident.raw_text = update.raw_text
+        changes["raw_text"] = True
+    if update.incident_type is not None:
+        incident.incident_type = update.incident_type
+        changes["incident_type"] = str(update.incident_type)
+    if update.urgency_level is not None:
+        incident.urgency_level = update.urgency_level
+        changes["urgency_level"] = str(update.urgency_level)
+    if update.location_name is not None:
+        incident.location_name = update.location_name
+        changes["location_name"] = update.location_name
+    if update.coordinates is not None:
+        incident.latitude = update.coordinates.latitude
+        incident.longitude = update.coordinates.longitude
+        changes["coordinates"] = [update.coordinates.longitude, update.coordinates.latitude]
+    if update.status is not None:
+        incident.status = update.status
+        changes["status"] = str(update.status)
+
+    db.commit()
+    db.refresh(incident)
+
+    inc_dict = incident.to_dict()
+    spatial_grid.add_or_update(inc_dict)
+    spatial_cache.invalidate_all()
+
+    audit_service.log_event(
+        action="INCIDENT_UPDATED",
+        actor=role,
+        details={"incident_id": incident.id, "changes": changes}
+    )
+
+    await ws_manager.broadcast("incident_updated", inc_dict)
+    return inc_dict
 
 @router.get("/spatial-feed", response_model=GeoJSONFeatureCollection)
 def get_spatial_feed(
@@ -621,6 +687,14 @@ async def update_incident_status(
 
     old_status = incident.status
     incident.status = update.status
+    now = datetime.now(timezone.utc)
+    if update.status == IncidentStatus.DISPATCHED and not incident.dispatched_at:
+        incident.dispatched_at = now
+    elif update.status == IncidentStatus.RESOLVED and not incident.resolved_at:
+        incident.resolved_at = now
+        if not incident.dispatched_at:
+            incident.dispatched_at = now
+
     db.commit()
     db.refresh(incident)
 
@@ -638,18 +712,94 @@ async def update_incident_status(
 
     return inc_dict
 
+@router.post("/{incident_id}/attachments", status_code=status.HTTP_201_CREATED)
+async def upload_incident_attachments(
+    incident_id: str,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)
+):
+    """Ingests scene images and voice distress recordings for an incident."""
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    import json, os, shutil
+    base_upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", incident_id)
+    os.makedirs(base_upload_dir, exist_ok=True)
+
+    existing = []
+    if incident.attachments:
+        try:
+            existing = json.loads(incident.attachments)
+        except Exception:
+            existing = []
+
+    new_attachments = []
+    for f in files:
+        safe_name = os.path.basename(f.filename) if f.filename else f"attachment_{uuid.uuid4().hex[:8]}"
+        dest_path = os.path.join(base_upload_dir, safe_name)
+        with open(dest_path, "wb") as buffer:
+            shutil.copyfileobj(f.file, buffer)
+
+        size_bytes = os.path.getsize(dest_path)
+        attachment_record = {
+            "filename": safe_name,
+            "url": f"/uploads/{incident_id}/{safe_name}",
+            "content_type": f.content_type or "application/octet-stream",
+            "size_bytes": size_bytes,
+            "uploaded_at": datetime.now(timezone.utc).isoformat()
+        }
+        new_attachments.append(attachment_record)
+        existing.append(attachment_record)
+
+    incident.attachments = json.dumps(existing)
+    db.commit()
+    db.refresh(incident)
+
+    inc_dict = incident.to_dict()
+    spatial_grid.add_or_update(inc_dict)
+    await ws_manager.broadcast("incident_attachments_updated", inc_dict)
+
+    return {
+        "incident_id": incident_id,
+        "attachments": existing,
+        "newly_added": len(new_attachments)
+    }
+
 @router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_incident(
     incident_id: str,
-    role: str = Depends(verify_api_key([ROLE_ADMIN])),
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
     db: Session = Depends(get_db)
 ):
-    """Deletes an incident from the ledger. Requires Admin role and logs to audit trail."""
+    """
+    Deletes an incident from the ledger. Requires Dispatcher or Admin role.
+    Prevents orphaned records: disengages all assigned responder units to Available state.
+    Cleans up associated file attachments on disk and logs to cryptographic audit trail.
+    """
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
     inc_info = {"id": incident.id, "location": incident.location_name}
+
+    # Disengage all responder units currently assigned to this incident to prevent orphaned references
+    assigned_units = db.query(ResponderUnit).filter(ResponderUnit.assigned_incident_id == incident.id).all()
+    for unit in assigned_units:
+        unit.assigned_incident_id = None
+        unit.status = ResponderStatus.AVAILABLE
+        db.add(unit)
+        await ws_manager.broadcast("responder_status_updated", unit.to_dict())
+
+    # Clean up attachment files on disk if any exist
+    import os, shutil
+    base_upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", incident_id)
+    if os.path.exists(base_upload_dir):
+        try:
+            shutil.rmtree(base_upload_dir, ignore_errors=True)
+        except Exception:
+            pass
+
     db.delete(incident)
     db.commit()
 
@@ -659,7 +809,7 @@ async def delete_incident(
     audit_service.log_event(
         action="INCIDENT_DELETED",
         actor=role,
-        details=inc_info
+        details={**inc_info, "disengaged_units": len(assigned_units)}
     )
 
     await ws_manager.broadcast("incident_deleted", {"id": incident_id})

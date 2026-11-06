@@ -47,6 +47,9 @@ class Incident(Base):
         
     status = Column(SQLEnum(IncidentStatus), nullable=False, default=IncidentStatus.PENDING, index=True)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    dispatched_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    attachments = Column(Text, nullable=True, default="[]")
 
     __table_args__ = (
         Index("idx_incidents_lat_lon", "latitude", "longitude"),
@@ -56,6 +59,14 @@ class Incident(Base):
 
 
     def to_dict(self):
+        import json
+        parsed_attachments = []
+        if self.attachments:
+            try:
+                parsed_attachments = json.loads(self.attachments)
+            except Exception:
+                parsed_attachments = []
+
         return {
             "id": self.id,
             "raw_text": self.raw_text,
@@ -67,10 +78,21 @@ class Incident(Base):
                 "longitude": self.longitude
             },
             "status": self.status.value if hasattr(self.status, "value") else self.status,
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "dispatched_at": self.dispatched_at.isoformat() if self.dispatched_at else None,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+            "attachments": parsed_attachments
         }
 
     def to_geojson_feature(self):
+        import json
+        parsed_attachments = []
+        if self.attachments:
+            try:
+                parsed_attachments = json.loads(self.attachments)
+            except Exception:
+                parsed_attachments = []
+
         return {
             "type": "Feature",
             "geometry": {
@@ -84,6 +106,9 @@ class Incident(Base):
                 "urgency_level": self.urgency_level.value if hasattr(self.urgency_level, "value") else self.urgency_level,
                 "location_name": self.location_name,
                 "status": self.status.value if hasattr(self.status, "value") else self.status,
-                "timestamp": self.timestamp.isoformat() if self.timestamp else None
+                "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+                "dispatched_at": self.dispatched_at.isoformat() if self.dispatched_at else None,
+                "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+                "attachments": parsed_attachments
             }
         }

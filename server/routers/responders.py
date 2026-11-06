@@ -10,11 +10,14 @@ from models.responder import ResponderUnit, ResponderType, ResponderStatus
 from models.incident import Incident, IncidentStatus, IncidentType, UrgencyLevel
 from schemas.responder import (
     ResponderUnitResponse,
+    ResponderUnitCreate,
     DispatchAssignmentRequest,
     ResponderStatusUpdate,
     SurgeSimulationRequest,
-    ResponderCoordinate
+    ResponderCoordinate,
+    ResponderChecklistUpdate
 )
+from datetime import datetime, timezone
 from services.nlp_service import nlp_service
 from services.websocket_manager import ws_manager
 from services.spatial_index import spatial_grid, spatial_cache
@@ -126,6 +129,67 @@ def get_responders(
         results.sort(key=lambda x: (x["status"] != "Available", x.get("distance_km") or 999.0))
 
     return results
+
+@router.post("", response_model=ResponderUnitResponse, status_code=status.HTTP_201_CREATED)
+async def create_responder_unit(
+    unit_in: ResponderUnitCreate,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """Enrolls a new tactical emergency responder unit in the active fleet registry."""
+    existing = db.query(ResponderUnit).filter(ResponderUnit.callsign == unit_in.callsign.strip()).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Responder unit with callsign '{unit_in.callsign}' already exists"
+        )
+
+    new_unit = ResponderUnit(
+        id=str(uuid.uuid4()),
+        callsign=unit_in.callsign.strip(),
+        unit_type=unit_in.unit_type,
+        base_station=unit_in.base_station.strip(),
+        latitude=unit_in.coordinates.latitude,
+        longitude=unit_in.coordinates.longitude,
+        status=ResponderStatus.AVAILABLE
+    )
+    db.add(new_unit)
+    db.commit()
+    db.refresh(new_unit)
+
+    d = new_unit.to_dict()
+    audit_service.log_event(
+        action="RESPONDER_ENROLLED",
+        actor=role,
+        details={"responder_id": new_unit.id, "callsign": new_unit.callsign, "unit_type": str(new_unit.unit_type)}
+    )
+
+    await ws_manager.broadcast("responder_created", d)
+    return d
+
+@router.delete("/{responder_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def decommission_responder_unit(
+    responder_id: str,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """Decommissions and removes a responder unit from active dispatch fleet."""
+    unit = db.query(ResponderUnit).filter(ResponderUnit.id == responder_id).first()
+    if not unit:
+        raise HTTPException(status_code=404, detail="Responder unit not found")
+
+    unit_info = {"id": unit.id, "callsign": unit.callsign}
+    db.delete(unit)
+    db.commit()
+
+    audit_service.log_event(
+        action="RESPONDER_DECOMMISSIONED",
+        actor=role,
+        details=unit_info
+    )
+
+    await ws_manager.broadcast("responder_deleted", {"id": responder_id})
+    return None
 
 @router.get("/recommend/{incident_id}")
 def recommend_responder_for_incident(
@@ -253,6 +317,8 @@ async def dispatch_responder(
     responder.assigned_incident_id = incident.id
 
     incident.status = IncidentStatus.DISPATCHED
+    if not incident.dispatched_at:
+        incident.dispatched_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(responder)
     db.refresh(incident)
@@ -332,7 +398,7 @@ async def update_responder_status(
 async def update_responder_location(
     responder_id: str,
     coords: ResponderCoordinate,
-    role: str = Depends(verify_api_key([ROLE_RESPONDER, ROLE_ADMIN])),
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_RESPONDER, ROLE_ADMIN])),
     db: Session = Depends(get_db)
 ):
     """Updates real-time GPS coordinates of a field responder unit and broadcasts telemetry."""
@@ -348,6 +414,34 @@ async def update_responder_location(
 
     d = responder.to_dict()
     await ws_manager.broadcast("responder_location_updated", d)
+    return d
+
+@router.patch("/{responder_id}/checklist", response_model=ResponderUnitResponse)
+async def update_responder_checklist(
+    responder_id: str,
+    update: ResponderChecklistUpdate,
+    role: str = Depends(verify_api_key([ROLE_RESPONDER, ROLE_DISPATCHER, ROLE_ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """Persists field responder tactical checklist progress across restarts and reloads."""
+    responder = db.query(ResponderUnit).filter(ResponderUnit.id == responder_id).first()
+    if not responder:
+        raise HTTPException(status_code=404, detail="Responder unit not found")
+
+    import json
+    current = {}
+    if responder.checklist_json:
+        try:
+            current = json.loads(responder.checklist_json)
+        except Exception:
+            current = {}
+    current.update(update.checklist)
+    responder.checklist_json = json.dumps(current)
+    db.commit()
+    db.refresh(responder)
+
+    d = responder.to_dict()
+    await ws_manager.broadcast("responder_checklist_updated", d)
     return d
 
 @router.post("/surge-simulate")

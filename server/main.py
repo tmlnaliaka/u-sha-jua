@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from config import settings
-from database import Base, engine, SessionLocal
+from database import Base, engine, SessionLocal, init_db
 from models.incident import Incident, IncidentType, UrgencyLevel, IncidentStatus
 from routers import (
     incidents_router,
@@ -14,7 +14,8 @@ from routers import (
     responders_router,
     weather_router,
     analytics_router,
-    shelters_router
+    shelters_router,
+    auth_router
 )
 from routers.responders import seed_responder_fleet
 from routers.shelters import seed_shelters
@@ -22,7 +23,9 @@ from services.spatial_index import spatial_grid, spatial_cache
 from services.websocket_manager import ws_manager
 from services.audit_service import audit_service
 import uuid
+import os
 from datetime import datetime, timezone
+from fastapi.staticfiles import StaticFiles
 
 def seed_initial_incidents():
     """Seeds rich initial crisis incidents across Kenyan informal & urban settlement hotspots."""
@@ -105,8 +108,8 @@ def seed_initial_incidents():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize DB tables
-    Base.metadata.create_all(bind=engine)
+    # Initialize DB tables & run migrations
+    init_db()
     seed_initial_incidents()
     
     # Warm up in-memory spatial grid index from persistence layer & seed fleet & shelters
@@ -156,7 +159,7 @@ async def security_headers_and_correlation_middleware(request: Request, call_nex
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = "geolocation=(self), microphone=(), camera=()"
+    response.headers["Permissions-Policy"] = "geolocation=(self), microphone=(self), camera=(self)"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self' 'unsafe-inline' https:; "
         "img-src 'self' data: https: *.tile.openstreetmap.org; "
@@ -165,6 +168,7 @@ async def security_headers_and_correlation_middleware(request: Request, call_nex
     return response
 
 # Mount API Routers
+app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(incidents_router, prefix=settings.API_V1_PREFIX)
 app.include_router(sms_router, prefix=settings.API_V1_PREFIX)
 app.include_router(responders_router, prefix=settings.API_V1_PREFIX)
@@ -172,6 +176,11 @@ app.include_router(weather_router, prefix=settings.API_V1_PREFIX)
 app.include_router(analytics_router, prefix=settings.API_V1_PREFIX)
 app.include_router(shelters_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws_router)
+
+# Mount Static Uploads Directory for disaster photos and audio distress notes
+UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 
 SERVER_START_TIME = time.time()
