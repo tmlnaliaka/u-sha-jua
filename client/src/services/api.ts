@@ -71,6 +71,29 @@ function formatErrorMessage(err: any): string {
   return err.message || JSON.stringify(err);
 }
 
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 15000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: options.signal || controller.signal
+    });
+    return response;
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw new Error(`Network timeout: request exceeded ${timeoutMs / 1000}s threshold.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
@@ -339,11 +362,46 @@ export const api = {
     return res.json();
   },
 
-  async getIncidents(limit: number = 100, offset: number = 0): Promise<Incident[]> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents?limit=${limit}&offset=${offset}`, {
+  async getIncidents(
+    optionsOrLimit: {
+      limit?: number;
+      offset?: number;
+      q?: string;
+      sortBy?: string;
+      order?: 'asc' | 'desc';
+      status?: string;
+      incident_type?: string;
+      urgency_level?: string;
+    } | number = 100,
+    offsetParam: number = 0
+  ): Promise<Incident[]> {
+    let limit = 100;
+    let offset = 0;
+    const params = new URLSearchParams();
+
+    if (typeof optionsOrLimit === 'number') {
+      limit = optionsOrLimit;
+      offset = offsetParam;
+    } else if (optionsOrLimit && typeof optionsOrLimit === 'object') {
+      limit = optionsOrLimit.limit ?? 100;
+      offset = optionsOrLimit.offset ?? 0;
+      if (optionsOrLimit.q) params.set('q', optionsOrLimit.q);
+      if (optionsOrLimit.sortBy) params.set('sort_by', optionsOrLimit.sortBy);
+      if (optionsOrLimit.order) params.set('order', optionsOrLimit.order);
+      if (optionsOrLimit.status && optionsOrLimit.status !== 'ALL') params.set('status', optionsOrLimit.status);
+      if (optionsOrLimit.incident_type && optionsOrLimit.incident_type !== 'ALL') params.set('incident_type', optionsOrLimit.incident_type);
+      if (optionsOrLimit.urgency_level && optionsOrLimit.urgency_level !== 'ALL') params.set('urgency_level', optionsOrLimit.urgency_level);
+    }
+    params.set('limit', limit.toString());
+    params.set('offset', offset.toString());
+
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents?${params.toString()}`, {
       headers: getAuthHeaders()
     });
-    if (!res.ok) throw new Error('Failed to fetch incidents');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to fetch incidents' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
@@ -362,76 +420,88 @@ export const api = {
       params.append('max_lon', bounds.maxLon.toString());
     }
     url += `?${params.toString()}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Failed to fetch spatial feed');
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to fetch spatial feed' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async reportIncident(report: CivilianReportInput): Promise<Incident> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents/report`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/report`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(report),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to submit report' }));
-      throw new Error(err.detail || 'Failed to submit report');
+      throw new Error(formatErrorMessage(err));
     }
     return res.json();
   },
 
   async batchReportIncidents(reports: CivilianReportInput[]): Promise<BatchReportResponse> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents/batch-report`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/batch-report`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reports }),
     });
-    if (!res.ok) throw new Error('Failed to submit batch reports');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to submit batch reports' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async getCacheMetrics(): Promise<CacheMetrics> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents/cache-metrics`);
-    if (!res.ok) throw new Error('Failed to fetch cache metrics');
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/cache-metrics`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to fetch cache metrics' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async updateIncident(id: string, updates: Partial<Incident>): Promise<Incident> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents/${encodeURIComponent(id)}`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to update incident' }));
-      throw new Error(err.detail || 'Failed to update incident');
+      throw new Error(formatErrorMessage(err));
     }
     return res.json();
   },
 
   async updateStatus(id: string, status: IncidentStatus): Promise<Incident> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents/${id}/status`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/${encodeURIComponent(id)}/status`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
     });
-    if (!res.ok) throw new Error('Failed to update status');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update status' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async deleteIncident(id: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents/${encodeURIComponent(id)}`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to delete incident' }));
-      throw new Error(err.detail || 'Failed to delete incident');
+      throw new Error(formatErrorMessage(err));
     }
   },
 
   async anonymizeIncident(id: string): Promise<Incident> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents/${encodeURIComponent(id)}/anonymize`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/${encodeURIComponent(id)}/anonymize`, {
       method: 'POST',
       headers: getAuthHeaders(),
     });
@@ -502,52 +572,67 @@ export const api = {
   },
 
   async dispatchResponder(responderId: string, incidentId: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/responders/${responderId}/dispatch`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/responders/${encodeURIComponent(responderId)}/dispatch`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ incident_id: incidentId }),
     });
-    if (!res.ok) throw new Error('Failed to dispatch responder unit');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to dispatch responder unit' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async updateResponderStatus(responderId: string, status: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/responders/${responderId}/status`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/responders/${encodeURIComponent(responderId)}/status`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
     });
-    if (!res.ok) throw new Error('Failed to update responder status');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update responder status' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async simulateSurge(surgeCount: number = 3): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/responders/surge-simulate`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/responders/surge-simulate`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ surge_count: surgeCount }),
     });
-    if (!res.ok) throw new Error('Failed to simulate surge');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to simulate surge' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async updateResponderLocation(responderId: string, latitude: number, longitude: number): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/responders/${responderId}/location`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/responders/${encodeURIComponent(responderId)}/location`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ latitude, longitude }),
     });
-    if (!res.ok) throw new Error('Failed to update responder location');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update responder location' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async updateResponderChecklist(responderId: string, checklist: Record<string, boolean>): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/responders/${responderId}/checklist`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/responders/${encodeURIComponent(responderId)}/checklist`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ checklist }),
     });
-    if (!res.ok) throw new Error('Failed to update responder checklist');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update responder checklist' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
@@ -557,48 +642,57 @@ export const api = {
     base_station: string;
     coordinates: { latitude: number; longitude: number };
   }): Promise<ResponderUnit> {
-    const res = await fetch(`${API_BASE}/api/v1/responders`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/responders`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to create responder unit' }));
-      throw new Error(err.detail || 'Failed to create responder unit');
+      throw new Error(formatErrorMessage(err));
     }
     return res.json();
   },
 
   async deleteResponder(responderId: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/api/v1/responders/${encodeURIComponent(responderId)}`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/responders/${encodeURIComponent(responderId)}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to decommission responder' }));
-      throw new Error(err.detail || 'Failed to decommission responder');
+      throw new Error(formatErrorMessage(err));
     }
   },
 
   async getShelters(onlyWithCapacity: boolean = false): Promise<Shelter[]> {
-    const res = await fetch(`${API_BASE}/api/v1/shelters?only_with_capacity=${onlyWithCapacity}`);
-    if (!res.ok) throw new Error('Failed to fetch evacuation shelters');
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/shelters?only_with_capacity=${onlyWithCapacity}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to fetch evacuation shelters' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async getNearestShelter(latitude: number, longitude: number): Promise<Shelter> {
-    const res = await fetch(`${API_BASE}/api/v1/shelters/nearest?latitude=${latitude}&longitude=${longitude}`);
-    if (!res.ok) throw new Error('Failed to fetch nearest shelter');
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/shelters/nearest?latitude=${latitude}&longitude=${longitude}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to fetch nearest shelter' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async updateShelterOccupancy(shelterId: string, occupancy: number): Promise<Shelter> {
-    const res = await fetch(`${API_BASE}/api/v1/shelters/${encodeURIComponent(shelterId)}/occupancy`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/shelters/${encodeURIComponent(shelterId)}/occupancy`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ occupancy_current: occupancy })
     });
-    if (!res.ok) throw new Error('Failed to update shelter occupancy');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update shelter occupancy' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
@@ -612,95 +706,126 @@ export const api = {
     medical_post_available?: boolean;
     contact_phone?: string;
   }): Promise<Shelter> {
-    const res = await fetch(`${API_BASE}/api/v1/shelters`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/shelters`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to create shelter' }));
-      throw new Error(err.detail || 'Failed to create shelter');
+      throw new Error(formatErrorMessage(err));
     }
     return res.json();
   },
 
   async updateShelter(shelterId: string, updates: Partial<Shelter>): Promise<Shelter> {
-    const res = await fetch(`${API_BASE}/api/v1/shelters/${encodeURIComponent(shelterId)}`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/shelters/${encodeURIComponent(shelterId)}`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to update shelter' }));
-      throw new Error(err.detail || 'Failed to update shelter');
+      throw new Error(formatErrorMessage(err));
     }
     return res.json();
   },
 
   async deleteShelter(shelterId: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/api/v1/shelters/${encodeURIComponent(shelterId)}`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/shelters/${encodeURIComponent(shelterId)}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to delete shelter' }));
-      throw new Error(err.detail || 'Failed to delete shelter');
+      throw new Error(formatErrorMessage(err));
     }
   },
 
+  async sendOutboundSms(to_phone: string, message: string, idempotency_key?: string): Promise<any> {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/sms/outbound`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ to_phone, message, idempotency_key })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to dispatch outbound SMS' }));
+      throw new Error(formatErrorMessage(err));
+    }
+    return res.json();
+  },
+
   async deleteUserAccount(userId: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/api/v1/auth/users/${encodeURIComponent(userId)}`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/auth/users/${encodeURIComponent(userId)}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to deactivate account' }));
-      throw new Error(err.detail || 'Failed to deactivate account');
+      throw new Error(formatErrorMessage(err));
     }
   },
 
   async getWeatherTelemetry(): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/weather/telemetry`);
-    if (!res.ok) throw new Error('Failed to fetch weather telemetry');
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/weather/telemetry`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to fetch weather telemetry' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async getFloodZones(): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/weather/flood-zones`);
-    if (!res.ok) throw new Error('Failed to fetch flood zones');
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/weather/flood-zones`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to fetch flood zones' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async getAnalyticsSummary(): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/analytics/summary`);
-    if (!res.ok) throw new Error('Failed to fetch analytics summary');
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/analytics/summary`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to fetch analytics summary' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async getAuditTrail(limit: number = 50, offset: number = 0): Promise<{ entries: AuditEntry[]; total_returned: number }> {
-    const res = await fetch(`${API_BASE}/api/v1/analytics/audit-log?limit=${limit}&offset=${offset}`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/analytics/audit-log?limit=${limit}&offset=${offset}`, {
       headers: getAuthHeaders()
     });
-    if (!res.ok) throw new Error('Failed to fetch audit trail');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to fetch audit trail' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async verifyAuditTrail(): Promise<AuditLedgerVerification> {
-    const res = await fetch(`${API_BASE}/api/v1/analytics/audit-log/verify`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/analytics/audit-log/verify`, {
       headers: getAuthHeaders()
     });
-    if (!res.ok) throw new Error('Failed to verify audit ledger');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to verify audit ledger' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async getOfflineBundle(): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents/export/offline-bundle`);
-    if (!res.ok) throw new Error('Failed to export offline bundle');
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/export/offline-bundle`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to export offline bundle' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async syncOfflinePacket(deviceId: string, incidents: any[]): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents/sync/offline-packet`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/sync/offline-packet`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -709,15 +834,19 @@ export const api = {
         incidents
       })
     });
-    if (!res.ok) throw new Error('Failed to sync offline packet');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to sync offline packet' }));
+      throw new Error(formatErrorMessage(err));
+    }
     return res.json();
   },
 
   async trackIncident(trackingId: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/incidents/track/${encodeURIComponent(trackingId)}`);
+    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/track/${encodeURIComponent(trackingId)}`);
     if (!res.ok) {
       if (res.status === 404) throw new Error('Incident tracking ID not found');
-      throw new Error('Failed to track incident');
+      const err = await res.json().catch(() => ({ detail: 'Failed to track incident' }));
+      throw new Error(formatErrorMessage(err));
     }
     return res.json();
   },
