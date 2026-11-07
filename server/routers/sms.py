@@ -5,17 +5,24 @@ import hashlib
 from typing import Optional
 from fastapi import APIRouter, Depends, Form, Request, status, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
 from database import get_db
 from config import settings
 from models.incident import Incident, IncidentStatus
 from services.nlp_service import nlp_service
 from services.websocket_manager import ws_manager
 from services.spatial_index import spatial_grid, spatial_cache
-from services.security import check_rate_limit, mask_pii, sanitize_input
+from services.security import check_rate_limit, mask_pii, sanitize_input, verify_api_key, ROLE_DISPATCHER, ROLE_ADMIN
 from services.audit_service import audit_service
+from services.sms_service import sms_gateway
 
 logger = logging.getLogger("sms_router")
 router = APIRouter(prefix="/sms", tags=["Telecom SMS Gateway"])
+
+class OutboundSMSRequest(BaseModel):
+    to_phone: str = Field(..., min_length=7, max_length=25, description="Target recipient telephone number")
+    message: str = Field(..., min_length=1, max_length=480, description="SMS text body")
+    idempotency_key: Optional[str] = Field(None, description="Optional caller idempotency key to prevent double delivery")
 
 @router.post("/incoming", status_code=status.HTTP_200_OK)
 async def incoming_sms_webhook(
@@ -52,6 +59,11 @@ async def incoming_sms_webhook(
             detail="Telecom gateway webhook unconfigured. SMS_WEBHOOK_SECRET must be set in production."
         )
 
+    carrier_msg_id = (
+        request.headers.get("X-Carrier-Message-Id") or
+        request.headers.get("Idempotency-Key") or
+        request.headers.get("X-Message-Id")
+    )
     raw_text = ""
     sender_phone = None
 
@@ -60,10 +72,25 @@ async def incoming_sms_webhook(
         body = await request.json()
         raw_text = body.get("text") or body.get("message") or body.get("raw_text", "")
         sender_phone = body.get("from") or body.get("sender_phone") or body.get("phone")
+        carrier_msg_id = carrier_msg_id or body.get("message_id") or body.get("messageId") or body.get("id") or body.get("smsId")
     else:
         form = await request.form()
         raw_text = form.get("text") or form.get("message") or ""
         sender_phone = form.get("from") or form.get("phoneNumber") or None
+        carrier_msg_id = carrier_msg_id or form.get("message_id") or form.get("messageId") or form.get("id") or form.get("smsId")
+
+    # Inbound Carrier Idempotency Guarantee
+    if carrier_msg_id:
+        existing_id = sms_gateway.check_inbound_idempotency(str(carrier_msg_id))
+        if existing_id:
+            existing_inc = db.query(Incident).filter(Incident.id == existing_id).first()
+            return {
+                "status": "success",
+                "idempotent_replay": True,
+                "incident_id": existing_id,
+                "urgency": existing_inc.urgency_level.value if existing_inc else "Medium",
+                "geocoded_location": existing_inc.location_name if existing_inc else "Cached"
+            }
 
     clean_text = sanitize_input(raw_text, max_len=1000)
 
@@ -88,6 +115,10 @@ async def incoming_sms_webhook(
     db.commit()
     db.refresh(incident)
 
+    # Record message ID in idempotency store
+    if carrier_msg_id:
+        sms_gateway.record_inbound_idempotency(str(carrier_msg_id), incident.id)
+
     inc_dict = incident.to_dict()
     spatial_grid.add_or_update(inc_dict)
     spatial_cache.invalidate_all()
@@ -102,7 +133,8 @@ async def incoming_sms_webhook(
             "sender": masked_phone,
             "type": inc_dict["incident_type"],
             "urgency": inc_dict["urgency_level"],
-            "location": incident.location_name
+            "location": incident.location_name,
+            "carrier_msg_id": carrier_msg_id
         }
     )
 
@@ -119,6 +151,33 @@ async def incoming_sms_webhook(
         "urgency": extraction.urgency_level.value,
         "geocoded_location": extraction.location_name
     }
+
+@router.post("/outbound", status_code=status.HTTP_200_OK)
+async def dispatch_outbound_sms(
+    payload: OutboundSMSRequest,
+    role: str = Depends(verify_api_key([ROLE_DISPATCHER, ROLE_ADMIN]))
+):
+    """
+    Dispatches outbound crisis alerts or dispatch progress notifications via SMS.
+    Enforces role authorization, caller idempotency, and carrier timeout resilience.
+    """
+    try:
+        res = await sms_gateway.send_sms(
+            to_phone=payload.to_phone,
+            message_body=payload.message,
+            idempotency_key=payload.idempotency_key
+        )
+        return res
+    except TimeoutError as te:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=f"Telecom gateway timeout: {str(te)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Telecom provider transmission failure: {str(e)}"
+        )
 
 @router.get("/incoming")
 def sms_webhook_health():
