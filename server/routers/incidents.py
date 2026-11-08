@@ -612,7 +612,14 @@ async def sync_offline_distress_packet(
             updated += 1
             continue
 
-        ts = datetime.fromisoformat(item.timestamp) if item.timestamp else datetime.now(timezone.utc)
+        if item.timestamp:
+            raw_ts = item.timestamp.replace("Z", "+00:00")
+            try:
+                ts = datetime.fromisoformat(raw_ts)
+            except Exception:
+                ts = datetime.now(timezone.utc)
+        else:
+            ts = datetime.now(timezone.utc)
         new_inc = Incident(
             id=inc_id,
             raw_text=sanitize_input(item.raw_text),
