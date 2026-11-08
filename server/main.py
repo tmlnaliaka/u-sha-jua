@@ -165,6 +165,19 @@ async def security_headers_and_correlation_middleware(request: Request, call_nex
         "img-src 'self' data: https: *.tile.openstreetmap.org; "
         "connect-src 'self' ws: wss: http: https:;"
     )
+
+    # High-Performance HTTP Cache-Control Strategy for Disaster Telecom Optimization
+    path = request.url.path
+    if request.method == "GET" and response.status_code == 200:
+        if path.startswith("/static/") or path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=86400, immutable"
+        elif "/weather/telemetry" in path or "/weather/flood-zones" in path:
+            response.headers["Cache-Control"] = "public, max-age=15, stale-while-revalidate=30"
+        elif "/analytics/" in path or "/shelters" in path:
+            response.headers["Cache-Control"] = "public, max-age=10, must-revalidate"
+        elif "/incidents" in path:
+            response.headers["Cache-Control"] = "private, no-cache, must-revalidate"
+
     return response
 
 # Mount API Routers
