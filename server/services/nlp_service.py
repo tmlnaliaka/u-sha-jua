@@ -230,23 +230,43 @@ class NLPService:
     ) -> DistressExtractionResult:
         text_lower = raw_text.lower()
 
-        # 1. Classification
+        # 1. Classification (English, Swahili, Sheng, and Crisis Emojis)
         incident_type = IncidentType.FLOOD
-        if any(w in text_lower for w in ["fire", "moto", "choma", "smoke", "burning", "blaze", "explosion"]):
+        fire_keywords = [
+            "fire", "moto", "choma", "smoke", "burning", "blaze", "explosion",
+            "ungua", "moshi", "mlipuko", "kuchomeka", "jivu", "🔥", "💥", "🚒"
+        ]
+        collapse_keywords = [
+            "collapse", "building", "debris", "trapped rubble", "cracked",
+            "mudslide", "landslide", "anguka", "poromoka", "kuporomoka",
+            "ukuta", "ghorofa", "kifusi", "maporomoko", "bomoka", "🏚️"
+        ]
+        flood_keywords = [
+            "flood", "water", "mafuriko", "mvua", "drowning", "river overflow",
+            "submerged", "swept", "maji", "mto", "zama", "kufurika",
+            "imezama", "maji yameingia", "maji mengi", "🌊", "⛈️", "🚣"
+        ]
+
+        if any(w in text_lower for w in fire_keywords):
             incident_type = IncidentType.FIRE
-        elif any(w in text_lower for w in ["collapse", "building", "debris", "trapped rubble", "cracked", "mudslide", "landslide", "anguka"]):
+        elif any(w in text_lower for w in collapse_keywords):
             incident_type = IncidentType.COLLAPSE
-        elif any(w in text_lower for w in ["flood", "water", "mafuriko", "mvua", "drowning", "river overflow", "submerged", "swept"]):
+        elif any(w in text_lower for w in flood_keywords):
             incident_type = IncidentType.FLOOD
 
-        # 2. Urgency
+        # 2. Urgency Level (English, Swahili, and Urgent Emojis)
         urgency = UrgencyLevel.MEDIUM
         critical_keywords = [
             "trapped", "dying", "children trapped", "unconscious", "explosion",
             "immediate help", "urgent", "emergency", "cannot breathe", "swept away",
-            "people inside", "help us now", "drowning", "flash flood", "surge", "burst"
+            "people inside", "help us now", "drowning", "flash flood", "surge", "burst",
+            "haraka", "watu wamekwama", "tusaidie", "okoa", "kufa", "damu", "watoto",
+            "dharura", "hatari", "mauti", "kukata roho", "hali mbaya", "🚨", "🆘", "‼️"
         ]
-        low_keywords = ["water logging", "damage", "puddles", "small smoke", "minor cracks", "traffic delay"]
+        low_keywords = [
+            "water logging", "damage", "puddles", "small smoke", "minor cracks",
+            "traffic delay", "kidogo", "polepole", "uharibifu mdogo", "maji machache", "kawaida"
+        ]
 
 
         if any(w in text_lower for w in critical_keywords):
