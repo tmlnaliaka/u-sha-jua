@@ -44,8 +44,9 @@ const createCustomMarker = (urgency: string) => {
   }
 
   const html = `
-    <div class="${pinClass}" style="display: flex; align-items: center; justify-content: center;">
+    <div class="${pinClass}" role="img" aria-label="${urgency} crisis marker" style="display: flex; align-items: center; justify-content: center;">
       <div style="width: 8px; height: 8px; background: white; border-radius: 50%;"></div>
+      <span class="sr-only">${urgency} Incident</span>
     </div>
   `;
 
@@ -78,8 +79,9 @@ const createResponderMarker = (unit: ResponderUnit) => {
     : '🚁';
 
   const html = `
-    <div style="position: relative; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: #0f172a; border: 2px solid ${color}; border-radius: 50%; box-shadow: 0 0 12px ${color}88;">
+    <div role="img" aria-label="Responder ${unit.callsign} (${unit.unit_type})" style="position: relative; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: #0f172a; border: 2px solid ${color}; border-radius: 50%; box-shadow: 0 0 12px ${color}88;">
       <span style="font-size: 14px;">${emoji}</span>
+      <span class="sr-only">${unit.callsign}</span>
       ${isDispatched ? `<span style="position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%; animation: pulse 1s infinite;"></span>` : ''}
     </div>
   `;
@@ -98,8 +100,9 @@ const createShelterMarker = (shelter: Shelter) => {
   const color = isCrowded ? '#ef4444' : shelter.occupancy_percent > 60 ? '#f59e0b' : '#10b981';
 
   const html = `
-    <div style="position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: #0b111e; border: 2px solid ${color}; border-radius: 8px; box-shadow: 0 0 10px ${color}66;">
+    <div role="img" aria-label="Evacuation shelter ${shelter.name}" style="position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: #0b111e; border: 2px solid ${color}; border-radius: 8px; box-shadow: 0 0 10px ${color}66;">
       <span style="font-size: 13px;">🏠</span>
+      <span class="sr-only">${shelter.name}</span>
     </div>
   `;
 
@@ -381,6 +384,8 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
               key={incident.id}
               position={[incident.coordinates.latitude, incident.coordinates.longitude]}
               icon={markerIcon}
+              title={`[${incident.urgency_level}] ${incident.location_name}`}
+              alt={`Crisis incident at ${incident.location_name}`}
               eventHandlers={{
                 click: () => onSelectIncident(incident),
               }}
@@ -458,6 +463,8 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
               key={unit.id}
               position={[unit.coordinates.latitude, unit.coordinates.longitude]}
               icon={respIcon}
+              title={`Responder ${unit.callsign} (${unit.unit_type}) - ${unit.status}`}
+              alt={`Emergency unit ${unit.callsign}`}
             >
               <Popup>
                 <div className="p-1 space-y-1.5 text-slate-100 max-w-xs">
@@ -524,6 +531,8 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
               key={s.id}
               position={[s.coordinates.latitude, s.coordinates.longitude]}
               icon={shelterIcon}
+              title={`Shelter ${s.name} (${s.occupancy_percent}% full)`}
+              alt={`Evacuation shelter ${s.name}`}
             >
               <Popup>
                 <div className="p-1 space-y-1.5 text-slate-100 max-w-xs text-xs">

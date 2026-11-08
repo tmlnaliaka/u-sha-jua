@@ -290,7 +290,8 @@ export const CivilianPortalModal: React.FC<CivilianPortalModalProps> = ({
           
           <button 
             onClick={onClose}
-            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition"
+            aria-label="Close Civilian Distress Portal"
+            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:outline-none"
           >
             <X className="w-5 h-5" />
           </button>
@@ -467,6 +468,7 @@ export const CivilianPortalModal: React.FC<CivilianPortalModalProps> = ({
                     <button
                       type="button"
                       onClick={handleToggleVoiceRecording}
+                      aria-label={isRecording ? "Stop voice recording" : "Record voice distress message"}
                       className={`w-12 h-12 rounded-xl flex items-center justify-center transition shadow-lg shrink-0 ${
                         isRecording 
                           ? 'bg-red-600 text-white animate-pulse ring-4 ring-red-500/30' 

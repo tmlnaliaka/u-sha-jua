@@ -67,6 +67,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
+            aria-label="Search incidents by landmark, description, or keyword"
             placeholder="Search landmarks, reports, keywords..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -78,6 +79,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
         <div className="grid grid-cols-3 gap-2">
           {/* Type Filter */}
           <select
+            aria-label="Filter incidents by disaster type"
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
             className="bg-[#161F30] border border-white/10 rounded-md py-1.5 px-2 text-[11px] text-slate-300 focus:outline-none focus:border-blue-500/50"
@@ -90,6 +92,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
 
           {/* Urgency Filter */}
           <select
+            aria-label="Filter incidents by urgency level"
             value={filterUrgency}
             onChange={(e) => setFilterUrgency(e.target.value)}
             className="bg-[#161F30] border border-white/10 rounded-md py-1.5 px-2 text-[11px] text-slate-300 focus:outline-none focus:border-blue-500/50"
@@ -102,6 +105,7 @@ export const DispatchBoard: React.FC<DispatchBoardProps> = ({
 
           {/* Status Filter */}
           <select
+            aria-label="Filter incidents by triage status"
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
             className="bg-[#161F30] border border-white/10 rounded-md py-1.5 px-2 text-[11px] text-slate-300 focus:outline-none focus:border-blue-500/50"

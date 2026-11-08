@@ -125,7 +125,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Civilian Public SOS Portal Button */}
         <button
           onClick={onOpenCivilianPortal}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 text-red-300 hover:text-white text-xs font-bold transition shadow-sm"
+          aria-label="CIVILIAN SOS: Open Civilian Public Distress Portal"
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 text-red-300 hover:text-white text-xs font-bold transition shadow-sm focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:outline-none"
           title="Open Civilian Public Distress Portal (SOS & Tracking)"
         >
           <LifeBuoy className="w-3.5 h-3.5 text-red-400" />
@@ -135,7 +136,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Field Responder Mobile PWA Cockpit */}
         <button
           onClick={onOpenResponderPwa}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/50 text-emerald-300 hover:text-white text-xs font-bold transition shadow-sm"
+          aria-label="FIELD AGENT: Open Field Responder Tactical Mobile View"
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/50 text-emerald-300 hover:text-white text-xs font-bold transition shadow-sm focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
           title="Open Field Responder Tactical Mobile View"
         >
           <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
@@ -145,7 +147,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Spatial Analytics Modal Button */}
         <button
           onClick={onOpenAnalyticsModal}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-300 hover:text-white text-xs font-bold transition shadow-sm"
+          aria-label="ANALYTICS: Open Spatial Analytics and Reports"
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-300 hover:text-white text-xs font-bold transition shadow-sm focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
           title="Open Spatial Analytics & Report Export"
         >
           <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
@@ -155,7 +158,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Enterprise Command & Security Suite */}
         <button
           onClick={onOpenCommandCenter}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/40 border border-cyan-500/50 text-cyan-300 hover:text-white text-xs font-bold transition shadow-sm"
+          aria-label="COMMAND & SEC: Open Enterprise Tactical Command and Security Suite"
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/40 border border-cyan-500/50 text-cyan-300 hover:text-white text-xs font-bold transition shadow-sm focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:outline-none"
           title="Open Enterprise Tactical Suite (Shelters, AI Auto-Dispatch, Cryptographic Ledger, Mesh)"
         >
           <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
@@ -165,7 +169,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Low-Bandwidth Mode Switcher */}
         <button
           onClick={onToggleLowBandwidth}
-          className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+          aria-label={lowBandwidth ? "Low-BW Throttled: Switch to Standard Bandwidth" : "Standard BW: Switch to Low Bandwidth Mode"}
+          className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none ${
             lowBandwidth
               ? 'bg-amber-950/80 text-amber-300 border-amber-500/50 shadow-sm'
               : 'bg-slate-800/80 text-slate-300 border-white/10 hover:bg-slate-800 hover:text-white'
@@ -179,7 +184,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Audio Alert Toggle */}
         <button
           onClick={onToggleSound}
-          className="p-2 rounded-lg bg-slate-800/80 border border-white/10 text-slate-300 hover:text-white hover:bg-slate-800 transition"
+          aria-label={soundEnabled ? "Mute emergency sound" : "Enable emergency sound"}
+          className="p-2 rounded-lg bg-slate-800/80 border border-white/10 text-slate-300 hover:text-white hover:bg-slate-800 transition focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
           title={soundEnabled ? 'Mute emergency sound' : 'Enable emergency sound'}
         >
           {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
@@ -189,7 +195,8 @@ export const Header: React.FC<HeaderProps> = ({
         {onOpenPrivacyModal && (
           <button
             onClick={onOpenPrivacyModal}
-            className="p-2 rounded-lg bg-slate-800/80 border border-white/10 text-slate-300 hover:text-cyan-400 hover:bg-slate-800 transition"
+            aria-label="Privacy and Kenya Data Protection Act 2019 rights policy"
+            className="p-2 rounded-lg bg-slate-800/80 border border-white/10 text-slate-300 hover:text-cyan-400 hover:bg-slate-800 transition focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:outline-none"
             title="Privacy, Data Protection (Kenya DPA 2019 / GDPR) & Citizen Rights"
           >
             <Lock className="w-4 h-4 text-cyan-400" />
@@ -208,7 +215,8 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 onClick={handleManualSync}
                 disabled={isSyncing}
-                className="ml-1 px-1.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-[10px] uppercase transition"
+                aria-label="Sync queued offline distress reports to central ledger now"
+                className="ml-1 px-1.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-[10px] uppercase transition focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:outline-none"
                 title="Sync queued offline reports to ledger now"
               >
                 {isSyncing ? 'Syncing...' : 'Sync'}
@@ -219,6 +227,8 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Live WebSocket Connection Status */}
         <div
+          role="status"
+          aria-label={connected ? "WebSocket connection live" : "WebSocket reconnecting"}
           className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs border font-mono ${
             connected
               ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30'
@@ -232,7 +242,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Crisis Stress-Test Simulator Button */}
         <button
           onClick={onOpenSimulatorModal}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-medium text-xs shadow-lg shadow-indigo-950/50 transition border border-indigo-400/30"
+          aria-label="SIMULATOR: Launch crisis stress-test simulator"
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-medium text-xs shadow-lg shadow-indigo-950/50 transition border border-indigo-400/30 focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
           title="Launch crisis stress-test simulator"
         >
           <Zap className="w-3.5 h-3.5 text-amber-300 fill-current" />
@@ -242,7 +253,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* User Identity / Authentication Button */}
         <button
           onClick={onOpenAuthModal}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition shadow-sm ${
+          aria-label={currentUser ? `${currentUser.full_name}: Account menu` : "SIGN IN: Sign In or Register"}
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition shadow-sm focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none ${
             currentUser
               ? 'bg-blue-600/20 hover:bg-blue-600/30 border-blue-500/40 text-blue-300'
               : 'bg-slate-800/90 hover:bg-slate-700 border-white/15 text-slate-300 hover:text-white'
@@ -267,7 +279,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Direct Ingestion Button */}
         <button
           onClick={onOpenReportModal}
-          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-xs shadow-lg shadow-red-950/50 transition border border-red-400/30"
+          aria-label="REPORT: Submit new crisis distress report"
+          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-xs shadow-lg shadow-red-950/50 transition border border-red-400/30 focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:outline-none"
         >
           <Plus className="w-4 h-4" />
           <span className="hidden sm:inline">REPORT</span>
