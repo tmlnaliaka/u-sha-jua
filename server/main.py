@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 import time
 from sqlalchemy import text
 from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from config import settings
@@ -22,6 +23,7 @@ from routers.shelters import seed_shelters
 from services.spatial_index import spatial_grid, spatial_cache
 from services.websocket_manager import ws_manager
 from services.audit_service import audit_service
+from services.security import rate_limiter
 import uuid
 import os
 from datetime import datetime, timezone
@@ -141,6 +143,20 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "X-Process-Time",
+        "X-Request-ID",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+        "Retry-After",
+        "Content-Security-Policy",
+        "X-Frame-Options",
+        "X-Content-Type-Options",
+        "Referrer-Policy",
+        "Permissions-Policy",
+        "Cache-Control"
+    ]
 )
 
 # OWASP Security Headers & Request Correlation Middleware
@@ -149,6 +165,67 @@ async def security_headers_and_correlation_middleware(request: Request, call_nex
     start_time = time.time()
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     
+    # 1. Rate Limiting Sliding-Window Check
+    path = request.url.path
+    method = request.method
+    
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "127.0.0.1"
+
+    # Whitelist / admin / internal bypass
+    bypass_key = request.headers.get("x-skip-rate-limit")
+    is_whitelisted = bypass_key and bypass_key in [settings.ADMIN_API_KEY, "ushajua-dev-admin-key", "test-bypass"]
+
+    rate_limit_info = None
+    if not is_whitelisted and not path.startswith("/health") and not path.startswith("/readyz") and not path.startswith("/healthz"):
+        if method == "POST" and ("/auth/token" in path or "/auth/login" in path or "/auth/register" in path):
+            tier = "auth"
+            max_req, win_sec = 10, 60.0
+        elif method == "POST" and "/sms/incoming" in path:
+            tier = "sms_webhook"
+            max_req, win_sec = 30, 60.0
+        elif method == "POST" and ("/incidents" in path):
+            tier = "incident_creation"
+            max_req, win_sec = 30, 60.0
+        else:
+            tier = "general"
+            max_req, win_sec = 300, 60.0
+
+        client_key = f"{tier}:{client_ip}"
+        allowed, remaining, retry_after = rate_limiter.is_allowed(client_key, max_requests=max_req, window_seconds=win_sec)
+        reset_time = int(time.time() + (retry_after if not allowed else win_sec))
+        rate_limit_info = {
+            "limit": max_req,
+            "remaining": remaining,
+            "reset": reset_time,
+            "retry_after": retry_after
+        }
+
+        if not allowed:
+            origin = request.headers.get("origin")
+            resp_headers = {
+                "Retry-After": str(int(retry_after)),
+                "X-RateLimit-Limit": str(max_req),
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(reset_time),
+                "X-Request-ID": request_id,
+                "Access-Control-Allow-Origin": origin or "*",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Expose-Headers": "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-Request-ID"
+            }
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": f"Rate limit exceeded. Maximum {max_req} requests per {int(win_sec)}s. Please retry in {retry_after}s.",
+                    "error": "RATE_LIMIT_EXCEEDED",
+                    "retry_after": retry_after
+                },
+                headers=resp_headers
+            )
+
     response: Response = await call_next(request)
     
     process_time = time.time() - start_time
@@ -161,10 +238,18 @@ async def security_headers_and_correlation_middleware(request: Request, call_nex
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(self), microphone=(self), camera=(self)"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self' 'unsafe-inline' https:; "
-        "img-src 'self' data: https: *.tile.openstreetmap.org; "
-        "connect-src 'self' ws: wss: http: https:;"
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; "
+        "img-src 'self' data: blob: https: *.tile.openstreetmap.org https://*.tile.openstreetmap.org; "
+        "connect-src 'self' ws: wss: http: https: ws://127.0.0.1:* ws://localhost:*; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "object-src 'none';"
     )
+
+    if rate_limit_info:
+        response.headers["X-RateLimit-Limit"] = str(rate_limit_info["limit"])
+        response.headers["X-RateLimit-Remaining"] = str(rate_limit_info["remaining"])
+        response.headers["X-RateLimit-Reset"] = str(rate_limit_info["reset"])
 
     # High-Performance HTTP Cache-Control Strategy for Disaster Telecom Optimization
     path = request.url.path

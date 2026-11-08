@@ -60,6 +60,13 @@ class InMemoryRateLimiter:
 
         return True, max(0, remaining - 1), 0.0
 
+    def reset(self, client_id: Optional[str] = None):
+        """Resets rate limit records (useful for test fixtures)."""
+        if client_id:
+            self._requests.pop(client_id, None)
+        else:
+            self._requests.clear()
+
     def _purge_stale(self, cutoff: float):
         keys_to_remove = [k for k, v in self._requests.items() if not v or v[-1] <= cutoff]
         for k in keys_to_remove:
