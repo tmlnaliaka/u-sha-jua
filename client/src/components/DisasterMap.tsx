@@ -95,18 +95,18 @@ const createResponderMarker = (unit: ResponderUnit) => {
   const color = unit.unit_type === 'Ambulance'
     ? '#38bdf8'
     : unit.unit_type === 'FireEngine'
-    ? '#f97316'
-    : unit.unit_type === 'WaterRescue'
-    ? '#2dd4bf'
-    : '#a855f7';
+      ? '#f97316'
+      : unit.unit_type === 'WaterRescue'
+        ? '#2dd4bf'
+        : '#a855f7';
 
   const emoji = unit.unit_type === 'Ambulance'
     ? '🚑'
     : unit.unit_type === 'FireEngine'
-    ? '🚒'
-    : unit.unit_type === 'WaterRescue'
-    ? '🚤'
-    : '🚁';
+      ? '🚒'
+      : unit.unit_type === 'WaterRescue'
+        ? '🚤'
+        : '🚁';
 
   const html = `
     <div role="img" aria-label="Responder ${unit.callsign} (${unit.unit_type})" style="position: relative; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: #0f172a; border: 2px solid ${color}; border-radius: 50%; box-shadow: 0 0 12px ${color}88;">
@@ -163,7 +163,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
   const [showWeatherRadar, setShowWeatherRadar] = useState<boolean>(true);
   const [showShelters, setShowShelters] = useState<boolean>(true);
   const [basemapMode, setBasemapMode] = useState<'tactical' | 'satellite' | 'streets'>('tactical');
-  
+
   // Weather & Flood Zones state
   const [floodZones, setFloodZones] = useState<FloodZoneFeature[]>([]);
   const [weatherTelemetry, setWeatherTelemetry] = useState<WeatherTelemetry | null>(null);
@@ -214,7 +214,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
 
   return (
     <div className="w-full h-full relative overflow-hidden select-none">
-      
+
       {/* Top Map Layer Control Bar */}
       <div className="absolute top-4 right-4 z-[1000] flex items-center space-x-2 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shadow-2xl">
         {/* Basemap Mode Switcher */}
@@ -233,11 +233,10 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
         <button
           type="button"
           onClick={() => setShowWeatherRadar(!showWeatherRadar)}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-            showWeatherRadar
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-900/50'
-              : 'bg-slate-800 text-slate-400 hover:text-white'
-          }`}
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${showWeatherRadar
+            ? 'bg-blue-600 text-white shadow-md shadow-blue-900/50'
+            : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
           title="Toggle Flood Inundation Zones & Weather Radar HUD"
         >
           <CloudRain className="w-3.5 h-3.5" />
@@ -247,11 +246,10 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
         <button
           type="button"
           onClick={() => setShowShelters(!showShelters)}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-            showShelters
-              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/50'
-              : 'bg-slate-800 text-slate-400 hover:text-white'
-          }`}
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${showShelters
+            ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/50'
+            : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
           title="Toggle Designated Evacuation Shelters & Relief Bases"
         >
           <Home className="w-3.5 h-3.5" />
@@ -261,11 +259,10 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
         <button
           type="button"
           onClick={() => setShowHeatmap(!showHeatmap)}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-            showHeatmap
-              ? 'bg-amber-600 text-white shadow-md shadow-amber-900/50'
-              : 'bg-slate-800 text-slate-400 hover:text-white'
-          }`}
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${showHeatmap
+            ? 'bg-amber-600 text-white shadow-md shadow-amber-900/50'
+            : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
           title="Toggle Spatial Incident Heatmap Gradient"
         >
           <Flame className="w-3.5 h-3.5" />
@@ -425,13 +422,12 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
                   {/* Header Badge */}
                   <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
                     <span
-                      className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                        incident.urgency_level === 'Critical'
-                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                          : incident.urgency_level === 'Medium'
+                      className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${incident.urgency_level === 'Critical'
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        : incident.urgency_level === 'Medium'
                           ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                           : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      }`}
+                        }`}
                     >
                       {incident.urgency_level} • {incident.incident_type}
                     </span>
@@ -500,9 +496,8 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
                 <div className="p-1 space-y-1.5 text-slate-100 max-w-xs">
                   <div className="flex items-center justify-between border-b border-white/10 pb-1">
                     <span className="text-xs font-bold text-white">{unit.callsign}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
-                      unit.status === 'Available' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
-                    }`}>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${unit.status === 'Available' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                      }`}>
                       {unit.status}
                     </span>
                   </div>
