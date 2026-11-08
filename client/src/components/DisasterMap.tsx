@@ -33,6 +33,36 @@ const MapController: React.FC<{ selectedIncident: Incident | null }> = ({ select
   return null;
 };
 
+// Memory cache for pre-rendered Leaflet DivIcons to prevent GC churn during high-frequency map interactions
+const customMarkerCache: Record<string, L.DivIcon> = {};
+const responderMarkerCache: Record<string, L.DivIcon> = {};
+const shelterMarkerCache: Record<string, L.DivIcon> = {};
+
+const getCachedCustomMarker = (urgency: string): L.DivIcon => {
+  if (!customMarkerCache[urgency]) {
+    customMarkerCache[urgency] = createCustomMarker(urgency);
+  }
+  return customMarkerCache[urgency];
+};
+
+const getCachedResponderMarker = (unit: ResponderUnit): L.DivIcon => {
+  const isDispatched = unit.status === 'Dispatched' || unit.status === 'OnScene';
+  const key = `${unit.callsign}-${unit.unit_type}-${isDispatched ? 'active' : 'idle'}`;
+  if (!responderMarkerCache[key]) {
+    responderMarkerCache[key] = createResponderMarker(unit);
+  }
+  return responderMarkerCache[key];
+};
+
+const getCachedShelterMarker = (shelter: Shelter): L.DivIcon => {
+  const tier = shelter.occupancy_percent > 85 ? 'full' : shelter.occupancy_percent > 60 ? 'mid' : 'avail';
+  const key = `${shelter.id}-${tier}`;
+  if (!shelterMarkerCache[key]) {
+    shelterMarkerCache[key] = createShelterMarker(shelter);
+  }
+  return shelterMarkerCache[key];
+};
+
 // Create custom DOM DivIcons based on urgency
 const createCustomMarker = (urgency: string) => {
   let pinClass = 'marker-pin-low';
@@ -377,7 +407,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
 
         {/* Render Incident Markers */}
         {incidents.map((incident) => {
-          const markerIcon = createCustomMarker(incident.urgency_level);
+          const markerIcon = getCachedCustomMarker(incident.urgency_level);
 
           return (
             <Marker
@@ -457,7 +487,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
 
         {/* Render Emergency Responder Fleet Markers */}
         {responders.map((unit) => {
-          const respIcon = createResponderMarker(unit);
+          const respIcon = getCachedResponderMarker(unit);
           return (
             <Marker
               key={unit.id}
@@ -525,7 +555,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
 
         {/* Designated Evacuation Shelters & Relief Bases Layer */}
         {showShelters && shelters.map((s) => {
-          const shelterIcon = createShelterMarker(s);
+          const shelterIcon = getCachedShelterMarker(s);
           return (
             <Marker
               key={s.id}
