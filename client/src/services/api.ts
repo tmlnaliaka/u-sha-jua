@@ -308,12 +308,12 @@ export const api = {
     const lat = report.device_lat ?? -1.2864;
     const lon = report.device_lon ?? 36.8172;
     const textLower = report.raw_text.toLowerCase();
-    const incident_type = textLower.includes('fire') || textLower.includes('smoke')
+    const incident_type = (textLower.includes('fire') || textLower.includes('smoke') || textLower.includes('moto') || textLower.includes('ungua') || textLower.includes('🔥'))
       ? 'Fire'
-      : textLower.includes('collapse') || textLower.includes('wall')
+      : (textLower.includes('collapse') || textLower.includes('wall') || textLower.includes('poromoka') || textLower.includes('anguka') || textLower.includes('🏚️'))
       ? 'Collapse'
       : 'Flood';
-    const urgency_level = textLower.includes('trapped') || textLower.includes('urgent') || textLower.includes('critical')
+    const urgency_level = (textLower.includes('trapped') || textLower.includes('urgent') || textLower.includes('critical') || textLower.includes('haraka') || textLower.includes('okoa') || textLower.includes('kwama') || textLower.includes('🚨') || textLower.includes('🆘'))
       ? 'Critical'
       : 'Medium';
     const entry: QueuedOfflineReport = {
@@ -329,6 +329,9 @@ export const api = {
     outbox.push(entry);
     try {
       localStorage.setItem(OFFLINE_OUTBOX_KEY, JSON.stringify(outbox));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ushajua:outbox-updated', { detail: { count: outbox.length } }));
+      }
     } catch {
       // Ignore storage quota errors
     }
@@ -350,6 +353,9 @@ export const api = {
     const res = await this.syncOfflinePacket('BROWSER_PWA_OUTBOX', outbox);
     try {
       localStorage.removeItem(OFFLINE_OUTBOX_KEY);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ushajua:outbox-updated', { detail: { count: 0 } }));
+      }
     } catch {
       // Ignore
     }
@@ -429,16 +435,27 @@ export const api = {
   },
 
   async reportIncident(report: CivilianReportInput): Promise<Incident> {
-    const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/report`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(report),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Failed to submit report' }));
-      throw new Error(formatErrorMessage(err));
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return this.enqueueOfflineReport(report);
     }
-    return res.json();
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/v1/incidents/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(report),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Failed to submit report' }));
+        throw new Error(formatErrorMessage(err));
+      }
+      return res.json();
+    } catch (e: any) {
+      if (typeof window !== 'undefined' && (e.message?.includes('network') || e.message?.includes('Failed to fetch') || e.message?.includes('timeout') || !navigator.onLine)) {
+        console.warn('Network unreachable, enqueueing report in offline outbox', e);
+        return this.enqueueOfflineReport(report);
+      }
+      throw e;
+    }
   },
 
   async batchReportIncidents(reports: CivilianReportInput[]): Promise<BatchReportResponse> {
@@ -935,3 +952,17 @@ export const api = {
     };
   }
 };
+
+// Auto-sync offline outbox when connection is restored
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', async () => {
+    try {
+      const count = await api.flushOfflineOutbox();
+      if (count > 0) {
+        window.dispatchEvent(new CustomEvent('ushajua:outbox-synced', { detail: { count } }));
+      }
+    } catch (e) {
+      console.warn('Auto-sync of offline outbox failed:', e);
+    }
+  });
+}

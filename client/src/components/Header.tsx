@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { api } from '../services/api';
 import { 
   Radio, Wifi, WifiOff, AlertTriangle, Plus, Volume2, VolumeX, 
   ShieldAlert, Zap, BarChart3, Smartphone, LifeBuoy, ShieldCheck, Lock, User
@@ -40,6 +41,53 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleSound,
   criticalCount,
 }) => {
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [outboxCount, setOutboxCount] = useState<number>(0);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  useEffect(() => {
+    const updateOutbox = () => {
+      try {
+        setOutboxCount(api.getOfflineOutbox().length);
+      } catch {
+        setOutboxCount(0);
+      }
+    };
+    updateOutbox();
+
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    const handleOutboxChange = () => updateOutbox();
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('ushajua:outbox-updated', handleOutboxChange);
+    window.addEventListener('ushajua:outbox-synced', handleOutboxChange);
+    window.addEventListener('storage', handleOutboxChange);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('ushajua:outbox-updated', handleOutboxChange);
+      window.removeEventListener('ushajua:outbox-synced', handleOutboxChange);
+      window.removeEventListener('storage', handleOutboxChange);
+    };
+  }, []);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const count = await api.flushOfflineOutbox();
+      setOutboxCount(api.getOfflineOutbox().length);
+      if (count > 0) {
+        window.dispatchEvent(new CustomEvent('ushajua:outbox-synced', { detail: { count } }));
+      }
+    } catch (e) {
+      console.warn('Manual sync failed:', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
   return (
     <header className="h-16 bg-[#0E1522] border-b border-white/10 px-4 sm:px-6 flex items-center justify-between select-none">
       {/* Brand & Operational System Title */}
@@ -146,6 +194,27 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Lock className="w-4 h-4 text-cyan-400" />
           </button>
+        )}
+
+        {/* Offline Outbox & Network Status Indicator */}
+        {(!isOnline || outboxCount > 0) && (
+          <div
+            data-testid="offline-outbox-indicator"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs border font-mono bg-amber-950/40 text-amber-300 border-amber-500/40 shadow-sm"
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span>{!isOnline ? 'OFFLINE' : `${outboxCount} QUEUED`}</span>
+            {outboxCount > 0 && isOnline && (
+              <button
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className="ml-1 px-1.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-[10px] uppercase transition"
+                title="Sync queued offline reports to ledger now"
+              >
+                {isSyncing ? 'Syncing...' : 'Sync'}
+              </button>
+            )}
+          </div>
         )}
 
         {/* Live WebSocket Connection Status */}
