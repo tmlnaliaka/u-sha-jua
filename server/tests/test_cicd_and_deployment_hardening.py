@@ -75,3 +75,4 @@ def test_deployment_readiness_audit_endpoint():
     assert data["all_checks_passed"] is True
     assert data["passed_checks"] == data["total_checks"]
     assert data["total_checks"] == 11
+
