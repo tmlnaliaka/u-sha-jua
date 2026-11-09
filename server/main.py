@@ -19,7 +19,8 @@ from routers import (
     analytics_router,
     shelters_router,
     auth_router,
-    telemetry_router
+    telemetry_router,
+    admin_db_router
 )
 from routers.responders import seed_responder_fleet
 from routers.shelters import seed_shelters
@@ -282,6 +283,7 @@ app.include_router(weather_router, prefix=settings.API_V1_PREFIX)
 app.include_router(analytics_router, prefix=settings.API_V1_PREFIX)
 app.include_router(shelters_router, prefix=settings.API_V1_PREFIX)
 app.include_router(telemetry_router, prefix=settings.API_V1_PREFIX)
+app.include_router(admin_db_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws_router)
 
 # Mount Static Uploads Directory for disaster photos and audio distress notes
