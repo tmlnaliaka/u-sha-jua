@@ -190,3 +190,4 @@ def get_migration_status(engine: Engine) -> Dict[str, Any]:
         "migrations": migrations,
         "active_indexes": sorted(list(set(indexes)))
     }
+
