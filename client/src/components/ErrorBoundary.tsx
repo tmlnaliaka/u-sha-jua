@@ -45,6 +45,13 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   private handleRecover = () => {
+    try {
+      if (typeof window !== 'undefined' && (window as any).__RESET_SIMULATED_CRASH__) {
+        (window as any).__RESET_SIMULATED_CRASH__();
+      }
+    } catch (e) {
+      // ignore
+    }
     this.setState({
       hasError: false,
       error: null,

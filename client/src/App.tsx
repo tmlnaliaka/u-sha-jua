@@ -38,6 +38,16 @@ export const App: React.FC = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [simulatedCrash, setSimulatedCrash] = useState<boolean>(false);
+
+  useEffect(() => {
+    (window as any).__TRIGGER_SIMULATED_CRASH__ = () => setSimulatedCrash(true);
+    (window as any).__RESET_SIMULATED_CRASH__ = () => setSimulatedCrash(false);
+  }, []);
+
+  if (simulatedCrash) {
+    throw new Error('Simulated tactical coordinate calculation failure in GIS engine (GeoJSON coordinate array NaN corruption)');
+  }
 
   // Play synthetic browser audio alert for critical emergencies (with automatic cleanup)
   const playAlertSound = useCallback(() => {
