@@ -5,7 +5,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.2+-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![PostGIS](https://img.shields.io/badge/PostGIS-16--3.4-336791.svg?logo=postgresql&logoColor=white)](https://postgis.net/)
 [![Leaflet](https://img.shields.io/badge/Leaflet-1.9.4-199900.svg?logo=leaflet&logoColor=white)](https://leafletjs.com/)
-[![Tests](https://img.shields.io/badge/Tests-94%20Passed-brightgreen.svg)](server/tests)
+[![Tests](https://img.shields.io/badge/Tests-98%20Passed-brightgreen.svg)](server/tests)
 [![Security](https://img.shields.io/badge/Security-JWT%20%2B%20RBAC%20%2B%20CSP-blue.svg)](server/services/security.py)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
@@ -368,6 +368,7 @@ docker compose up -d --build
 | `POST` | `/api/v1/admin/backup/restore` | Admin | JSON: Snapshot payload | `200 OK`: Verifies `sha256_checksum` & transactionally restores incidents, responders, and shelters |
 | `GET` | `/api/v1/admin/query-plan` | Admin | None | `200 OK`: `EXPLAIN QUERY PLAN` verification proving `0` full table scans |
 | `GET` | `/api/v1/admin/deployment-audit` | Admin | None | `200 OK`: `11/11` Docker multi-stage, non-root `ushajua`, Nginx proxy, & CI/CD quality gate audit |
+| `GET` | `/api/v1/admin/production-readiness` | Admin | None | `200 OK`: 9-Dimension Production Readiness Scorecard (`5.0/5.0`, `verdict: "GO"`) |
 | `GET` | `/health` | Public | None | `200 OK`: `{status: "healthy", version: "1.4.0-enterprise", database, audit_ledger_blocks, audit_chain_verified, spatial_grid_items, active_ws_connections}` |
 | `GET` | `/healthz` | Public | None | `200 OK`: `{"status": "alive"}` (Kubernetes/Docker Liveness Probe) |
 | `GET` | `/readyz` | Public | None | `200 OK`: `{"status": "ready"}` (Database `SELECT 1` Readiness Probe) |

@@ -200,3 +200,4 @@ erDiagram
    ```
 2. **Synchronize Field Mesh Packets Upon Reconnection**:
    - The browser PWA (`client/public/sw.js` + `localStorage` outbox) automatically queues civilian distress reports while offline and flushes them via `POST /api/v1/incidents/sync/offline-packet` when connectivity returns, deduplicating by UUID.
+
