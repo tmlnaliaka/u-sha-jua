@@ -1,19 +1,18 @@
-version: '3.8'
-
 services:
   db:
     image: postgis/postgis:16-3.4
     container_name: ushajua_postgis
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: ushajua_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: securepassword
+      POSTGRES_DB: ${POSTGRES_DB:-ushajua_db}
+      POSTGRES_USER: ${POSTGRES_USER:-ushajua_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgis_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ushajua_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-ushajua_user} -d $${POSTGRES_DB:-ushajua_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,10 +21,18 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+      target: runtime
     container_name: ushajua_server
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:securepassword@db:5432/ushajua_db
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://ushajua_user:change_me_in_production@db:5432/ushajua_db}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      ENFORCE_STRICT_AUTH: ${ENFORCE_STRICT_AUTH:-true}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AFRICASTALKING_API_KEY: ${AFRICASTALKING_API_KEY:-}
+      AFRICASTALKING_USERNAME: ${AFRICASTALKING_USERNAME:-sandbox}
+      AFRICASTALKING_SENDER_ID: ${AFRICASTALKING_SENDER_ID:-uSHAjua}
+      SMS_WEBHOOK_SECRET: ${SMS_WEBHOOK_SECRET:-}
       HOST: 0.0.0.0
       PORT: 8000
     ports:
@@ -34,9 +41,9 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./server:/app
+      - uploads_data:/app/uploads
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/readyz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -45,15 +52,23 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+      target: runtime
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8000}
     container_name: ushajua_client
+    restart: unless-stopped
     ports:
       - "5173:80"
-    environment:
-      VITE_API_URL: http://localhost:8000
-      VITE_WS_URL: ws://localhost:8000
     depends_on:
       server:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
 
 volumes:
   postgis_data:
+  uploads_data:
