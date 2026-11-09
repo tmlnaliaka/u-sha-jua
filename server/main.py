@@ -3,6 +3,8 @@ import time
 from sqlalchemy import text
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from config import settings
@@ -164,6 +166,7 @@ app.add_middleware(
 async def security_headers_and_correlation_middleware(request: Request, call_next):
     start_time = time.time()
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
     
     # 1. Rate Limiting Sliding-Window Check
     path = request.url.path
@@ -326,6 +329,118 @@ def readiness_probe():
         return {"status": "ready"}
     except Exception:
         raise HTTPException(status_code=503, detail="Database connection unavailable")
+
+# Structured Error Envelope Helper
+def build_error_envelope(
+    status_code: int,
+    error_code: str,
+    message: str,
+    request: Request,
+    details: any = None
+) -> dict:
+    request_id = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    envelope = {
+        "success": False,
+        "error_code": error_code,
+        "message": message,
+        "detail": message,  # Backward compatibility with default FastAPI client expectations
+        "status_code": status_code,
+        "request_id": request_id,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    if details is not None:
+        envelope["details"] = details
+    return envelope
+
+@app.exception_handler(StarletteHTTPException)
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    request_id = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    error_code = f"HTTP_{exc.status_code}"
+    if exc.status_code == 404:
+        error_code = "NOT_FOUND"
+    elif exc.status_code == 401:
+        error_code = "UNAUTHORIZED"
+    elif exc.status_code == 403:
+        error_code = "FORBIDDEN"
+    elif exc.status_code == 429:
+        error_code = "RATE_LIMIT_EXCEEDED"
+
+    content = build_error_envelope(
+        status_code=exc.status_code,
+        error_code=error_code,
+        message=str(exc.detail),
+        request=request
+    )
+    headers = {
+        "X-Request-ID": request_id,
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY"
+    }
+    if hasattr(exc, "headers") and exc.headers:
+        headers.update(exc.headers)
+
+    return JSONResponse(status_code=exc.status_code, content=content, headers=headers)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    request_id = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    clean_errors = []
+    for err in exc.errors():
+        clean_errors.append({
+            "field": ".".join(str(loc) for loc in err.get("loc", [])),
+            "message": err.get("msg", "Invalid field input"),
+            "type": err.get("type", "value_error")
+        })
+
+    content = build_error_envelope(
+        status_code=422,
+        error_code="VALIDATION_ERROR",
+        message="Request payload validation failed on one or more fields.",
+        request=request,
+        details=clean_errors
+    )
+    # Also expose standard detail array so existing test clients expecting list of errors pass seamlessly
+    content["detail"] = exc.errors()
+
+    return JSONResponse(
+        status_code=422,
+        content=content,
+        headers={"X-Request-ID": request_id, "X-Content-Type-Options": "nosniff"}
+    )
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    import logging
+    logging.getLogger("uvicorn.error").error(
+        f"Unhandled Server Error [ReqID: {request_id}] on {request.method} {request.url.path}: {exc}",
+        exc_info=True
+    )
+
+    # Return safe masked error envelope to client without leaking internal python stack trace or DB strings
+    content = build_error_envelope(
+        status_code=500,
+        error_code="INTERNAL_SERVER_ERROR",
+        message="An unexpected server error occurred. Emergency telemetry request has been logged.",
+        request=request
+    )
+    origin = request.headers.get("origin") or "*"
+    return JSONResponse(
+        status_code=500,
+        content=content,
+        headers={
+            "X-Request-ID": request_id,
+            "X-Content-Type-Options": "nosniff",
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true"
+        }
+    )
+
+@app.get("/api/v1/test/synthetic-error", tags=["Diagnostics"])
+def trigger_synthetic_error():
+    """Diagnostic route to verify that unhandled 500 exceptions suppress tracebacks and return structured error envelopes."""
+    raise RuntimeError("Synthetic crisis hardware simulation fault - DB socket connection dropped unexpectedly!")
 
 
 if __name__ == "__main__":
