@@ -55,22 +55,11 @@ Base = declarative_base()
 
 def init_db():
     Base.metadata.create_all(bind=engine)
-    with engine.begin() as conn:
-        try:
-            if engine.dialect.name == "sqlite":
-                cols = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(incidents)").fetchall()]
-                if cols and "dispatched_at" not in cols:
-                    conn.exec_driver_sql("ALTER TABLE incidents ADD COLUMN dispatched_at DATETIME")
-                if cols and "resolved_at" not in cols:
-                    conn.exec_driver_sql("ALTER TABLE incidents ADD COLUMN resolved_at DATETIME")
-                if cols and "attachments" not in cols:
-                    conn.exec_driver_sql("ALTER TABLE incidents ADD COLUMN attachments TEXT DEFAULT '[]'")
-
-                resp_cols = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(responder_units)").fetchall()]
-                if resp_cols and "checklist_json" not in resp_cols:
-                    conn.exec_driver_sql("ALTER TABLE responder_units ADD COLUMN checklist_json TEXT DEFAULT '{\"hazard_survey\": false, \"triage_perimeter\": false, \"casualty_treatment\": false, \"evacuation_corridor\": false}'")
-        except Exception:
-            pass
+    try:
+        from migrations.runner import run_migrations
+        run_migrations(engine)
+    except Exception:
+        pass
 
 def get_db():
     db = SessionLocal()
