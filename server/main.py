@@ -18,7 +18,8 @@ from routers import (
     weather_router,
     analytics_router,
     shelters_router,
-    auth_router
+    auth_router,
+    telemetry_router
 )
 from routers.responders import seed_responder_fleet
 from routers.shelters import seed_shelters
@@ -26,6 +27,7 @@ from services.spatial_index import spatial_grid, spatial_cache
 from services.websocket_manager import ws_manager
 from services.audit_service import audit_service
 from services.security import rate_limiter
+from services.telemetry import telemetry_collector
 import uuid
 import os
 from datetime import datetime, timezone
@@ -208,6 +210,8 @@ async def security_headers_and_correlation_middleware(request: Request, call_nex
         }
 
         if not allowed:
+            process_time = time.time() - start_time
+            telemetry_collector.record_request(method, path, 429, process_time * 1000, request_id, client_ip)
             origin = request.headers.get("origin")
             resp_headers = {
                 "Retry-After": str(int(retry_after)),
@@ -232,6 +236,7 @@ async def security_headers_and_correlation_middleware(request: Request, call_nex
     response: Response = await call_next(request)
     
     process_time = time.time() - start_time
+    telemetry_collector.record_request(method, path, response.status_code, process_time * 1000, request_id, client_ip)
     response.headers["X-Process-Time"] = f"{process_time:.4f}s"
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -276,6 +281,7 @@ app.include_router(responders_router, prefix=settings.API_V1_PREFIX)
 app.include_router(weather_router, prefix=settings.API_V1_PREFIX)
 app.include_router(analytics_router, prefix=settings.API_V1_PREFIX)
 app.include_router(shelters_router, prefix=settings.API_V1_PREFIX)
+app.include_router(telemetry_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws_router)
 
 # Mount Static Uploads Directory for disaster photos and audio distress notes
