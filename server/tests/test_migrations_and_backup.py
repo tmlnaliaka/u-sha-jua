@@ -105,3 +105,4 @@ def test_snapshot_restore_recovers_data_and_rejects_tampered_checksum():
     assert res_data["checksum_verified"] is True
     assert res_data["sha256_checksum"] == valid_snapshot["sha256_checksum"]
     assert res_data["restored_counts"]["incidents"] >= 1
+
