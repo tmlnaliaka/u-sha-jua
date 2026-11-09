@@ -39,6 +39,15 @@ export class ErrorBoundary extends Component<Props, State> {
         userAgent: navigator.userAgent,
       };
       sessionStorage.setItem('ushajua_last_crash', JSON.stringify(crashSnapshot));
+
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+      fetch(`${apiBase}/api/v1/telemetry/client-error`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(crashSnapshot),
+      }).catch(() => {
+        // Non-blocking telemetry shipping; ignore network errors when offline
+      });
     } catch (e) {
       console.warn('Failed to save crash snapshot', e);
     }
