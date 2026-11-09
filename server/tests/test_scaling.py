@@ -21,7 +21,7 @@ def setup_db():
 
 def test_spatial_grid_index_query():
     """Validates that the in-memory spatial grid index indexes and queries correctly."""
-    # Seed a known incident into the spatial grid
+    # Seed a known incident into the spatial grid with a current/future timestamp so it ranks in top 250
     test_inc = {
         "id": "test-grid-id-1",
         "raw_text": "Flooding along Mathare river bank",
@@ -30,7 +30,7 @@ def test_spatial_grid_index_query():
         "location_name": "Mathare Valley 4A",
         "coordinates": {"latitude": -1.2612, "longitude": 36.8574},
         "status": "Pending",
-        "timestamp": "2026-10-11T12:00:00Z"
+        "timestamp": "2099-12-31T23:59:59Z"
     }
     spatial_grid.add_or_update(test_inc)
     assert spatial_grid.size() >= 1
