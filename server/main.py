@@ -132,10 +132,69 @@ async def lifespan(app: FastAPI):
         
     yield
 
+OPENAPI_TAGS = [
+    {
+        "name": "Authentication & RBAC",
+        "description": "JWT Bearer token issuance, refresh rotation, user registration, and Role-Based Access Control (Dispatcher, Responder, Admin)."
+    },
+    {
+        "name": "Incidents",
+        "description": "Civilian distress ingestion (NLP + Swahili/Sheng gazetteer), GeoJSON spatial viewport feeds, OASIS CAP v1.2 alerts, hazard buffer perimeters, and offline mesh sync."
+    },
+    {
+        "name": "Responders",
+        "description": "First responder fleet tracking, Haversine ETA routing, Multi-Criteria Decision Analysis (MCDA) recommendations, and autonomous one-touch dispatch."
+    },
+    {
+        "name": "Shelters",
+        "description": "Evacuation shelter capacity tracking, nearest open shelter Haversine lookup, and live headcount updates."
+    },
+    {
+        "name": "SMS Gateway",
+        "description": "Africa's Talking & Twilio carrier webhook ingestion with HMAC/secret verification and idempotency deduplication."
+    },
+    {
+        "name": "Weather",
+        "description": "Meteorological radar telemetry, precipitation/river gauge monitoring, and Nairobi flood basin polygons."
+    },
+    {
+        "name": "Analytics",
+        "description": "Executive crisis KPIs (MTTD, MTTR, resolution rate), CSV dataset export, and SHA-256 tamper-evident cryptographic audit ledger verification."
+    },
+    {
+        "name": "Observability & Telemetry",
+        "description": "Real-time request throughput, latency percentiles (avg/p95/max), structured JSON correlation logs, and React ErrorBoundary crash ingestion."
+    },
+    {
+        "name": "Database Migrations & Disaster Backup",
+        "description": "Deterministic schema migrations (schema_migrations), composite B-Tree EXPLAIN QUERY PLAN inspection, portable SHA-256 snapshot export/restore, and deployment hardening audits."
+    },
+    {
+        "name": "Health",
+        "description": "Deep system health (/health), Kubernetes/Docker liveness (/healthz), and database readiness (/readyz) probes."
+    },
+    {
+        "name": "Diagnostics",
+        "description": "Synthetic fault injection endpoints for verifying resilient error envelopes and traceback masking."
+    }
+]
+
 app = FastAPI(
     title="u-SHA-jua Disaster Informatics Platform",
-    description="Resilient Asynchronous Geospatial Disaster Intelligence & Emergency Dispatch System",
-    version="1.3.0-enterprise",
+    description=(
+        "Resilient Asynchronous Geospatial Disaster Intelligence & Emergency Dispatch System "
+        "for East African Informal Settlements & Crisis Corridors."
+    ),
+    version="1.4.0-enterprise",
+    openapi_tags=OPENAPI_TAGS,
+    contact={
+        "name": "u-SHA-jua Sovereign Crisis Engineering Team",
+        "url": "https://github.com/tmlnaliaka/u-sha-jua"
+    },
+    license_info={
+        "name": "Apache 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
+    },
     lifespan=lifespan
 )
 
