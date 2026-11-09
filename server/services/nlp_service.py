@@ -42,6 +42,21 @@ KENYA_GAZETTEER: Dict[str, Tuple[float, float, str]] = {
 
 DEFAULT_COORDINATES = (-1.286389, 36.817223, "Nairobi Central, Kenya")
 
+# Bounding box for Kenya (including adjacent emergency cross-border disaster zones ~100km buffer)
+KENYA_BBOX = {
+    "min_lat": -5.5,
+    "max_lat": 5.8,
+    "min_lon": 33.0,
+    "max_lon": 42.5
+}
+
+def is_within_kenya_jurisdiction(lat: float, lon: float) -> bool:
+    """Verifies coordinates are inside Kenya or immediate border emergency corridors."""
+    return (
+        KENYA_BBOX["min_lat"] <= lat <= KENYA_BBOX["max_lat"]
+        and KENYA_BBOX["min_lon"] <= lon <= KENYA_BBOX["max_lon"]
+    )
+
 class DistressExtractionResult:
     def __init__(
         self,
@@ -211,6 +226,13 @@ class NLPService:
         
         lat = device_lat if device_lat is not None else float(data.get("estimated_lat", DEFAULT_COORDINATES[0]))
         lon = device_lon if device_lon is not None else float(data.get("estimated_lon", DEFAULT_COORDINATES[1]))
+        
+        # Enforce Kenyan operational jurisdiction
+        if not is_within_kenya_jurisdiction(lat, lon):
+            logger.warning(f"Inferred coordinates ({lat}, {lon}) outside Kenya bounds. Clamping to Nairobi Central.")
+            lat = DEFAULT_COORDINATES[0]
+            lon = DEFAULT_COORDINATES[1]
+
         conf = float(data.get("confidence", 0.9))
 
         return DistressExtractionResult(
@@ -288,12 +310,18 @@ class NLPService:
                 loc_name = g_name
                 break
 
-        # If device GPS provided, honor device coordinates
+        # If device GPS provided, honor device coordinates if within Kenya jurisdiction
         if device_lat is not None and device_lon is not None:
-            lat = device_lat
-            lon = device_lon
-            if not found_landmark:
-                loc_name = f"GPS Pin ({lat:.4f}, {lon:.4f})"
+            if is_within_kenya_jurisdiction(device_lat, device_lon):
+                lat = device_lat
+                lon = device_lon
+                if not found_landmark:
+                    loc_name = f"Kenya GPS Pin ({lat:.4f}, {lon:.4f})"
+            else:
+                logger.warning(
+                    f"Provided device coordinates ({device_lat}, {device_lon}) outside Kenya bounds. "
+                    f"Reverting to Kenyan territory coordinates."
+                )
 
         return DistressExtractionResult(
             incident_type=incident_type,

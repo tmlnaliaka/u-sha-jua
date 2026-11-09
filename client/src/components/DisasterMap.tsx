@@ -16,6 +16,12 @@ interface DisasterMapProps {
   onDispatchResponder?: (responderId: string, incidentId: string) => void;
 }
 
+// Strict Kenyan Territorial Bounding Box with ~100km buffer for borderline cross-border disasters
+export const KENYA_BOUNDS: L.LatLngBoundsExpression = [
+  [-5.5, 33.0], // Southwest border (Tanzania / Lake Victoria boundary)
+  [5.8, 42.5],  // Northeast border (Ethiopia / Somalia / Mandera tri-point boundary)
+];
+
 // Controller to handle programmatic camera flyTo
 const MapController: React.FC<{ selectedIncident: Incident | null }> = ({ selectedIncident }) => {
   const map = useMap();
@@ -217,6 +223,15 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
 
       {/* Top Map Layer Control Bar */}
       <div className="absolute top-4 right-4 z-[1000] flex items-center space-x-2 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shadow-2xl">
+        {/* Kenya Sovereign Operational Boundary Badge */}
+        <div
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300"
+          title="Operational Scope: Strictly Kenya Sovereign Territory & Immediate Cross-Border Emergency Corridors"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>Kenya Only</span>
+        </div>
+
         {/* Basemap Mode Switcher */}
         <button
           type="button"
@@ -303,6 +318,10 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
       <MapContainer
         center={defaultPosition}
         zoom={12}
+        minZoom={6}
+        maxZoom={19}
+        maxBounds={KENYA_BOUNDS}
+        maxBoundsViscosity={1.0}
         scrollWheelZoom={true}
         className="w-full h-full"
       >
