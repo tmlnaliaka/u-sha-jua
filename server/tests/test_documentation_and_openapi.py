@@ -95,3 +95,4 @@ def test_architecture_and_operational_runbooks_documentation():
     assert "Runbook 5:" in runbook_text
     assert "sequenceDiagram" in runbook_text
     assert "erDiagram" in runbook_text
+
