@@ -126,3 +126,4 @@ const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
   await browser.close();
   console.log('Phase 15 Playwright CI/CD & Docker Hardening Verification completed successfully.');
 })();
+
