@@ -218,6 +218,50 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
     loadPerimeter();
   }, [selectedIncident]);
 
+  // Dynamic Mapbox Navigation & High-Precision Structural Tiles for Kenya
+  const mapboxToken = (import.meta.env.VITE_MAPBOX_ACCESS_TOKEN as string) || '';
+
+  const getTileConfig = () => {
+    if (mapboxToken) {
+      if (basemapMode === 'tactical') {
+        return {
+          url: `https://api.mapbox.com/styles/v1/mapbox/navigation-night-v1/tiles/256/{z}/{x}/{y}?access_token=${mapboxToken}`,
+          attribution: '&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; u-SHA-jua Sovereign Engine',
+          className: ''
+        };
+      }
+      if (basemapMode === 'streets') {
+        return {
+          url: `https://api.mapbox.com/styles/v1/mapbox/navigation-day-v1/tiles/256/{z}/{x}/{y}?access_token=${mapboxToken}`,
+          attribution: '&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; u-SHA-jua Sovereign Engine',
+          className: ''
+        };
+      }
+      // satellite
+      return {
+        url: `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/256/{z}/{x}/{y}?access_token=${mapboxToken}`,
+        attribution: '&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; Maxar &copy; u-SHA-jua Sovereign Engine',
+        className: ''
+      };
+    }
+
+    // Fallback when no Mapbox token is present
+    if (basemapMode === 'satellite') {
+      return {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attribution: '&copy; Esri &copy; Earthstar Geographics',
+        className: ''
+      };
+    }
+    return {
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; u-SHA-jua Geospatial Engine',
+      className: basemapMode === 'tactical' ? 'dark-map-tiles' : ''
+    };
+  };
+
+  const tileConfig = getTileConfig();
+
   return (
     <div className="w-full h-full relative overflow-hidden select-none">
 
@@ -329,18 +373,10 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
 
         {/* Clean, High-Precision Tile Layer without Watermarks */}
         <TileLayer
-          key={basemapMode}
-          attribution={
-            basemapMode === 'satellite'
-              ? '&copy; Esri &copy; Earthstar Geographics'
-              : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; u-SHA-jua Geospatial Engine'
-          }
-          url={
-            basemapMode === 'satellite'
-              ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-              : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-          }
-          className={basemapMode === 'tactical' ? 'dark-map-tiles' : ''}
+          key={`${basemapMode}-${Boolean(mapboxToken)}`}
+          attribution={tileConfig.attribution}
+          url={tileConfig.url}
+          className={tileConfig.className}
           maxZoom={19}
         />
 
