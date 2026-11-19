@@ -10,6 +10,7 @@ import { api } from '../services/api';
 interface ResponderPwaModalProps {
   isOpen: boolean;
   onClose: () => void;
+  connected: boolean;
   responders: ResponderUnit[];
   incidents: Incident[];
   onUpdateResponderStatus: (responderId: string, status: string) => Promise<any>;
@@ -19,6 +20,7 @@ interface ResponderPwaModalProps {
 export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
   isOpen,
   onClose,
+  connected,
   responders,
   incidents,
   onUpdateResponderStatus,
@@ -57,39 +59,48 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
   const handleStatusChange = async (newStatus: ResponderStatus) => {
     if (!currentUnit) return;
     try {
-      await onUpdateResponderStatus(currentUnit.id, newStatus);
+      const updated = await onUpdateResponderStatus(currentUnit.id, newStatus);
+      if (updated === false) return;
       if (newStatus === 'OnScene' && assignedIncident) {
-        showToast(`📍 Unit ${currentUnit.callsign} arrived On-Scene!`);
+        showToast(`${currentUnit.callsign} marked on scene.`);
       } else if (newStatus === 'Available') {
         if (assignedIncident) {
-          await onUpdateIncidentStatus(assignedIncident.id, 'Resolved');
+          const resolved = await onUpdateIncidentStatus(assignedIncident.id, 'Resolved');
+          if (resolved === false) return;
         }
-        showToast(`✅ Mission Resolved & ${currentUnit.callsign} Cleared!`);
+        showToast(`${currentUnit.callsign} is available.`);
       } else {
-        showToast(`⚡ Unit status updated: ${newStatus}`);
+        showToast(`Status changed to ${newStatus}.`);
       }
     } catch (err) {
       console.error('Status update failed', err);
+      showToast('Could not update the assignment. Check the connection and try again.');
     }
   };
 
   const handleTransmitFieldGps = async () => {
     if (!currentUnit) return;
+    if (!navigator.geolocation) {
+      showToast('This browser cannot access device location.');
+      return;
+    }
     setIsTransmittingGps(true);
     try {
-      // Simulate minor field movement towards target or current spot
-      const currentLat = currentUnit.coordinates.latitude;
-      const currentLon = currentUnit.coordinates.longitude;
-      const targetLat = assignedIncident ? assignedIncident.coordinates.latitude : currentLat;
-      const targetLon = assignedIncident ? assignedIncident.coordinates.longitude : currentLon;
-
-      const newLat = currentLat + (targetLat - currentLat) * 0.25;
-      const newLon = currentLon + (targetLon - currentLon) * 0.25;
-
-      await api.updateResponderLocation(currentUnit.id, newLat, newLon);
-      showToast(`📡 Live GPS coordinates broadcasted to central command!`);
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+        });
+      });
+      await api.updateResponderLocation(
+        currentUnit.id,
+        position.coords.latitude,
+        position.coords.longitude
+      );
+      showToast('Device location sent to the response map.');
     } catch (err) {
       console.error('GPS transmission failed', err);
+      showToast('Could not send device location. Check location permission and try again.');
     } finally {
       setIsTransmittingGps(false);
     }
@@ -98,7 +109,7 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
   const allChecklistCompleted = Object.values(checklist).every(Boolean);
 
   return (
-    <div className="fixed inset-0 z-[4000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[4000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200" role="dialog" aria-modal="true" aria-labelledby="field-heading">
       <div className="bg-[#0B101B] border border-white/15 rounded-2xl w-full max-w-lg max-h-[92vh] flex flex-col shadow-2xl overflow-hidden font-sans text-slate-100">
         
         {/* Modal Header */}
@@ -108,20 +119,18 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
               <Smartphone className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                Field Responder Mobile PWA
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/30 text-emerald-300 font-mono">
-                  FIELD COCKPIT
-                </span>
+              <h2 id="field-heading" className="text-sm font-bold text-white flex items-center gap-2">
+                Responder field view
               </h2>
               <p className="text-[11px] text-slate-400">
-                Tactical On-Scene Triage & Real-Time Mission Telemetry
+                Review an assignment and update its status.
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
+            aria-label="Close responder field view"
             className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition"
           >
             <X className="w-5 h-5" />
@@ -134,10 +143,12 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
           {/* Unit Selector & Connectivity Status */}
           <div className="flex items-center justify-between gap-3 bg-slate-900/90 p-3 rounded-xl border border-white/10">
             <div className="flex-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Active Tactical Unit
+              <label htmlFor="field-unit" className="text-[10px] font-bold text-slate-400 block mb-1">
+                Responder unit
               </label>
               <select
+                id="field-unit"
+                name="field-unit"
                 value={selectedUnitId}
                 onChange={(e) => setSelectedUnitId(e.target.value)}
                 className="w-full bg-slate-800 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white font-semibold focus:outline-none focus:border-emerald-500"
@@ -151,21 +162,21 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
             </div>
 
             <div className="flex flex-col items-end">
-              <span className="text-[10px] text-slate-400 font-bold uppercase mb-1">PWA Sync</span>
-              <div className="flex items-center space-x-1.5 text-xs font-mono text-emerald-400 bg-emerald-950/60 px-2 py-1 rounded-md border border-emerald-500/30">
-                <Wifi className="w-3.5 h-3.5 animate-pulse" />
-                <span>ONLINE</span>
+              <span className="text-[10px] text-slate-400 font-bold mb-1">Connection</span>
+              <div className={`flex items-center space-x-1.5 text-xs px-2 py-1 rounded-md border ${connected ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-800 bg-amber-50 border-amber-200'}`} role="status">
+                <Wifi className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{connected ? 'Live updates' : 'Reconnecting'}</span>
               </div>
             </div>
           </div>
 
           {/* Assigned Mission Banner */}
           {currentUnit && (
-            <div className="p-4 rounded-xl bg-slate-900/90 border border-white/10 space-y-3">
+            {currentUnit && <div className="p-4 rounded-xl bg-slate-900/90 border border-white/10 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <Shield className="w-4 h-4 text-emerald-400" />
-                  Mission Target: {assignedIncident ? assignedIncident.location_name : 'No Active Dispatch'}
+                  <Shield className="w-4 h-4 text-emerald-700" />
+                  {assignedIncident ? assignedIncident.location_name : 'No current assignment'}
                 </span>
                 <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
                   currentUnit.status === 'Dispatched'
@@ -184,66 +195,47 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
                     "{assignedIncident.raw_text}"
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2 rounded bg-slate-800/60 border border-white/10">
-                      <span className="text-[10px] text-slate-400 block">ESTIMATED ETA</span>
-                      <span className="font-mono font-bold text-blue-300">
-                        {currentUnit.eta_minutes || 8} Minutes
-                      </span>
+                  <dl className="assignment-facts">
+                    <div>
+                      <dt>Incident</dt>
+                      <dd>{assignedIncident.urgency_level} {assignedIncident.incident_type}</dd>
                     </div>
-                    <div className="p-2 rounded bg-slate-800/60 border border-white/10">
-                      <span className="text-[10px] text-slate-400 block">HAZARD PRIORITY</span>
-                      <span className="font-mono font-bold text-red-400">
-                        {assignedIncident.urgency_level} {assignedIncident.incident_type}
-                      </span>
-                    </div>
-                  </div>
+                    {currentUnit.distance_km !== undefined && (
+                      <div>
+                        <dt>Distance</dt>
+                        <dd>{currentUnit.distance_km} km</dd>
+                      </div>
+                    )}
+                    {currentUnit.eta_minutes !== undefined && (
+                      <div>
+                        <dt>Estimated travel time</dt>
+                        <dd>{currentUnit.eta_minutes} min</dd>
+                      </div>
+                    )}
+                  </dl>
                 </div>
               ) : (
-                <p className="text-xs text-slate-400 italic">
-                  Unit is currently standing by at base station ({currentUnit.base_station}). Ready for dispatch assignment.
+                <p className="text-xs text-slate-400">
+                  Available at {currentUnit.base_station}. No incident is assigned.
                 </p>
               )}
             </div>
-          )}
+          </div>}
 
-          {/* Turn-by-Turn Routing Cues */}
-          {assignedIncident && (
-            <div className="p-3.5 rounded-xl bg-slate-900/70 border border-white/10 space-y-2">
-              <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Navigation className="w-3.5 h-3.5 text-blue-400" />
-                Turn-by-Turn Tactical Routing
-              </span>
-              <div className="space-y-1.5 text-xs text-slate-300">
-                <p className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                  Depart {currentUnit.base_station} via priority lane
-                </p>
-                <p className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                  Proceed towards {assignedIncident.location_name} (ETA ~{currentUnit.eta_minutes || 10}m)
-                </p>
-                <p className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  Muster point: Near elevated bypass access corridor
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* On-Scene Tactical Mission Checklist */}
+          {/* On-device checklist state is not sent to the server. */}
           <div className="p-4 rounded-xl bg-slate-900/80 border border-white/10 space-y-3">
-            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <h3 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              On-Scene Rescue Checklist
+              Field checklist
             </h3>
+            <p className="text-[11px] text-slate-500">Checklist changes stay on this device and are not saved.</p>
 
             <div className="space-y-2">
               {[
-                { key: 'hazard_survey', label: '1. Initial Scene Hazard & Stability Survey' },
-                { key: 'triage_perimeter', label: '2. Establish Safe Perimeter & Casualty Triage Zone' },
-                { key: 'casualty_treatment', label: '3. Administer Emergency First Aid / Extraction' },
-                { key: 'evacuation_corridor', label: '4. Clear Civilian Escape Route & Evacuate' },
+                { key: 'hazard_survey', label: 'Assess the scene and nearby hazards' },
+                { key: 'triage_perimeter', label: 'Set a safe perimeter' },
+                { key: 'casualty_treatment', label: 'Check whether anyone needs urgent care' },
+                { key: 'evacuation_corridor', label: 'Keep access and exit routes clear' },
               ].map((item) => (
                 <button
                   key={item.key}
@@ -266,10 +258,11 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
             </div>
           </div>
 
-          {/* Tactical Status Change Buttons */}
+          {!currentUnit && <p className="fleet-empty">No responder units are available.</p>}
+          {currentUnit && <>
           <div className="space-y-2 pt-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Broadcast Operational Status
+            <span className="text-xs font-semibold text-slate-400 block">
+              Update unit status
             </span>
             <div className="grid grid-cols-3 gap-2">
               <button
@@ -301,12 +294,11 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
                 onClick={() => handleStatusChange('Available')}
                 className="py-2 px-1 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 shadow-lg transition"
               >
-                Resolve & Clear
+                Available
               </button>
             </div>
           </div>
 
-          {/* Live GPS Broadcast Button */}
           <div>
             <button
               type="button"
@@ -315,9 +307,10 @@ export const ResponderPwaModal: React.FC<ResponderPwaModalProps> = ({
               className="w-full py-2.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs font-bold transition flex items-center justify-center space-x-2"
             >
               <Radio className={`w-4 h-4 ${isTransmittingGps ? 'animate-ping' : ''}`} />
-              <span>{isTransmittingGps ? 'Broadcasting Coordinates...' : 'Transmit Live Field GPS Coordinates'}</span>
+              <span>{isTransmittingGps ? 'Getting device location…' : 'Send device location'}</span>
             </button>
           </div>
+          </>}
 
           {/* Toast Notification */}
           {toastMsg && (

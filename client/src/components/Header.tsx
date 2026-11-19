@@ -1,7 +1,17 @@
 import React from 'react';
-import { 
-  Radio, Wifi, WifiOff, AlertTriangle, Plus, Volume2, VolumeX, 
-  ShieldAlert, Zap, BarChart3, Smartphone, LifeBuoy, ShieldCheck
+import {
+  BarChart3,
+  LifeBuoy,
+  MapPinned,
+  Radio,
+  ShieldCheck,
+  Smartphone,
+  Siren,
+  Volume2,
+  VolumeX,
+  Wifi,
+  WifiOff,
+  Zap,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -34,134 +44,65 @@ export const Header: React.FC<HeaderProps> = ({
   criticalCount,
 }) => {
   return (
-    <header className="h-16 bg-[#0E1522] border-b border-white/10 px-4 sm:px-6 flex items-center justify-between select-none">
-      {/* Brand & Operational System Title */}
-      <div className="flex items-center space-x-3 sm:space-x-4">
-        <div className="w-10 h-10 rounded-lg bg-red-950/70 border border-red-500/40 flex items-center justify-center text-red-500 shadow-lg shadow-red-950/40 shrink-0">
-          <ShieldAlert className="w-6 h-6 animate-pulse" />
+    <header className="site-header">
+      <a className="brand-lockup" href="#main-content" aria-label="u-SHA-jua response overview">
+        <span className="brand-mark" aria-hidden="true">
+          <MapPinned size={21} strokeWidth={1.8} />
+        </span>
+        <span className="brand-copy">
+          <h1 className="brand-name">u-SHA-jua</h1>
+          <span className="brand-description">Emergency response map</span>
+        </span>
+      </a>
+
+      <div className="header-controls">
+        <div className={`connection-state ${connected ? 'is-connected' : 'is-disconnected'}`} role="status" aria-live="polite">
+          {connected ? <Wifi size={15} aria-hidden="true" /> : <WifiOff size={15} aria-hidden="true" />}
+          <span>{connected ? 'Live updates' : 'Reconnecting'}</span>
         </div>
-        <div>
-          <div className="flex items-center space-x-2">
-            <h1 className="font-extrabold text-base sm:text-lg tracking-wider text-slate-100 flex items-center gap-1.5 font-mono">
-              u-SHA-jua <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-sans uppercase">GIS Command</span>
-            </h1>
-            <span className="hidden md:flex text-xs px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/30 items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-              v1.3.0 Live
-            </span>
-          </div>
-          <p className="text-[11px] sm:text-xs text-slate-400 truncate max-w-[280px] sm:max-w-none">
-            Resilient Geospatial Disaster Informatics & First Responder Telemetry
-          </p>
+
+        <div className="header-tools" aria-label="Response tools">
+          <button className={`tool-button ${lowBandwidth ? 'is-active' : ''}`} onClick={onToggleLowBandwidth} aria-pressed={lowBandwidth} title="Toggle low-bandwidth mode">
+            <Radio size={15} aria-hidden="true" />
+            <span className="tool-label">Low bandwidth</span>
+          </button>
+          <button className="tool-button sound-button" onClick={onToggleSound} aria-label={soundEnabled ? 'Mute alert sound' : 'Enable alert sound'} aria-pressed={soundEnabled} title={soundEnabled ? 'Mute alert sound' : 'Enable alert sound'}>
+            {soundEnabled ? <Volume2 size={15} aria-hidden="true" /> : <VolumeX size={15} aria-hidden="true" />}
+            <span className="tool-label">Sound</span>
+          </button>
+          <button className="tool-button" onClick={onOpenCivilianPortal} title="Open the public distress and tracking portal">
+            <LifeBuoy size={15} aria-hidden="true" />
+            <span className="tool-label">Public help</span>
+          </button>
+          <button className="tool-button" onClick={onOpenResponderPwa} title="Open the field responder view">
+            <Smartphone size={15} aria-hidden="true" />
+            <span className="tool-label">Field view</span>
+          </button>
+          <button className="tool-button" onClick={onOpenAnalyticsModal} title="Open incident analytics and exports">
+            <BarChart3 size={15} aria-hidden="true" />
+            <span className="tool-label">Analytics</span>
+          </button>
+          <button className="tool-button" onClick={onOpenCommandCenter} title="Open shelters, unit recommendations, audit, and offline tools">
+            <ShieldCheck size={15} aria-hidden="true" />
+            <span className="tool-label">Operations</span>
+          </button>
+          <button className="tool-button" onClick={onOpenSimulatorModal} title="Open the incident simulator">
+            <Zap size={15} aria-hidden="true" />
+            <span className="tool-label">Simulator</span>
+          </button>
+          <button className="report-button" onClick={onOpenReportModal}>
+            <Siren size={16} aria-hidden="true" />
+            <span>New report</span>
+          </button>
         </div>
       </div>
 
-      {/* Critical Status Bar & Navigation Controls */}
-      <div className="flex items-center space-x-2 sm:space-x-2.5">
-        
-        {/* Critical Alert Banner */}
-        {criticalCount > 0 && (
-          <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-red-950/60 border border-red-500/50 text-red-400 animate-pulse text-xs font-semibold">
-            <AlertTriangle className="w-4 h-4 text-red-400" />
-            <span>{criticalCount} CRITICAL DISTRESS</span>
-          </div>
-        )}
-
-        {/* Civilian Public SOS Portal Button */}
-        <button
-          onClick={onOpenCivilianPortal}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 border border-red-500/50 text-red-300 hover:text-white text-xs font-bold transition shadow-sm"
-          title="Open Civilian Public Distress Portal (SOS & Tracking)"
-        >
-          <LifeBuoy className="w-3.5 h-3.5 text-red-400" />
-          <span className="hidden sm:inline">CIVILIAN SOS</span>
-        </button>
-
-        {/* Field Responder Mobile PWA Cockpit */}
-        <button
-          onClick={onOpenResponderPwa}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/50 text-emerald-300 hover:text-white text-xs font-bold transition shadow-sm"
-          title="Open Field Responder Tactical Mobile View"
-        >
-          <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="hidden sm:inline">FIELD AGENT</span>
-        </button>
-
-        {/* Spatial Analytics Modal Button */}
-        <button
-          onClick={onOpenAnalyticsModal}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-300 hover:text-white text-xs font-bold transition shadow-sm"
-          title="Open Spatial Analytics & Report Export"
-        >
-          <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
-          <span className="hidden md:inline">ANALYTICS</span>
-        </button>
-
-        {/* Enterprise Command & Security Suite */}
-        <button
-          onClick={onOpenCommandCenter}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/40 border border-cyan-500/50 text-cyan-300 hover:text-white text-xs font-bold transition shadow-sm"
-          title="Open Enterprise Tactical Suite (Shelters, AI Auto-Dispatch, Cryptographic Ledger, Mesh)"
-        >
-          <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="hidden lg:inline">COMMAND & SEC</span>
-        </button>
-
-        {/* Low-Bandwidth Mode Switcher */}
-        <button
-          onClick={onToggleLowBandwidth}
-          className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-            lowBandwidth
-              ? 'bg-amber-950/80 text-amber-300 border-amber-500/50 shadow-sm'
-              : 'bg-slate-800/80 text-slate-300 border-white/10 hover:bg-slate-800 hover:text-white'
-          }`}
-          title="Toggle constrained bandwidth optimization"
-        >
-          <Radio className="w-3.5 h-3.5" />
-          <span className="hidden lg:inline">{lowBandwidth ? 'Low-BW Throttled' : 'Standard BW'}</span>
-        </button>
-
-        {/* Audio Alert Toggle */}
-        <button
-          onClick={onToggleSound}
-          className="p-2 rounded-lg bg-slate-800/80 border border-white/10 text-slate-300 hover:text-white hover:bg-slate-800 transition"
-          title={soundEnabled ? 'Mute emergency sound' : 'Enable emergency sound'}
-        >
-          {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
-        </button>
-
-        {/* Live WebSocket Connection Status */}
-        <div
-          className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs border font-mono ${
-            connected
-              ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30'
-              : 'bg-rose-950/40 text-rose-400 border-rose-500/30'
-          }`}
-        >
-          {connected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5 animate-pulse" />}
-          <span className="hidden sm:inline">{connected ? 'WS LIVE' : 'RECONNECTING'}</span>
+      {criticalCount > 0 && (
+        <div className="critical-ribbon" role="status">
+          <span className="critical-indicator" aria-hidden="true" />
+          {criticalCount} critical {criticalCount === 1 ? 'incident' : 'incidents'} need attention
         </div>
-
-        {/* Crisis Stress-Test Simulator Button */}
-        <button
-          onClick={onOpenSimulatorModal}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-medium text-xs shadow-lg shadow-indigo-950/50 transition border border-indigo-400/30"
-          title="Launch crisis stress-test simulator"
-        >
-          <Zap className="w-3.5 h-3.5 text-amber-300 fill-current" />
-          <span className="hidden md:inline">SIMULATOR</span>
-        </button>
-
-        {/* Direct Ingestion Button */}
-        <button
-          onClick={onOpenReportModal}
-          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-xs shadow-lg shadow-red-950/50 transition border border-red-400/30"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">REPORT</span>
-        </button>
-
-      </div>
+      )}
     </header>
   );
 };

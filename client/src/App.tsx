@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Incident, CivilianReportInput, IncidentStatus, ResponderUnit, ActiveRoute } from './types';
 import { api } from './services/api';
 import { Header } from './components/Header';
@@ -31,10 +31,15 @@ export const App: React.FC = () => {
   const [isCommandCenterOpen, setIsCommandCenterOpen] = useState<boolean>(false);
   
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const soundEnabledRef = useRef(soundEnabled);
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
 
   // Play synthetic browser audio alert for critical emergencies
   const playAlertSound = useCallback(() => {
-    if (!soundEnabled) return;
+    if (!soundEnabledRef.current) return;
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const osc = audioCtx.createOscillator();
@@ -51,7 +56,7 @@ export const App: React.FC = () => {
     } catch (e) {
       // AudioContext not permitted without user gesture
     }
-  }, [soundEnabled]);
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -83,6 +88,7 @@ export const App: React.FC = () => {
       setIncidents(data);
     } catch (err) {
       console.error('Failed to load incidents', err);
+      showToast('Could not load incidents. Check the connection and try again.');
     }
   };
 
@@ -93,6 +99,7 @@ export const App: React.FC = () => {
       setResponders(data);
     } catch (err) {
       console.error('Failed to load responders', err);
+      showToast('Could not load responder units. Check the connection and try again.');
     }
   };
 
@@ -106,21 +113,19 @@ export const App: React.FC = () => {
         if (event === 'incident_reported' || event === 'incident_created') {
           const newInc: Incident = data;
           setIncidents((prev) => [newInc, ...prev.filter((i) => i.id !== newInc.id)]);
-          showToast(`🚨 NEW ${newInc.urgency_level.toUpperCase()} ${newInc.incident_type.toUpperCase()}: ${newInc.location_name}`);
+          showToast(`New ${newInc.urgency_level.toLowerCase()} ${newInc.incident_type.toLowerCase()} report: ${newInc.location_name}.`);
           if (newInc.urgency_level === 'Critical') {
             playAlertSound();
           }
         } else if (event === 'batch_incidents_reported') {
           loadIncidents();
-          showToast(`🚨 INGESTED ${data.count} BATCH DISTRESS REPORTS`);
+          showToast(`Received ${data.count} incident reports.`);
         } else if (event === 'status_updated') {
           const updated: Incident = data;
           setIncidents((prev) =>
             prev.map((inc) => (inc.id === updated.id ? updated : inc))
           );
-          if (selectedIncident?.id === updated.id) {
-            setSelectedIncident(updated);
-          }
+          setSelectedIncident((current) => current?.id === updated.id ? updated : current);
           showToast(`Status updated: ${updated.location_name} -> ${updated.status}`);
         } else if (event === 'incident_deleted') {
           setIncidents((prev) => prev.filter((i) => i.id !== data.id));
@@ -143,7 +148,7 @@ export const App: React.FC = () => {
               }
             ]);
           }
-          showToast(`⚡ ${responder.callsign} DISPATCHED (ETA ${routing?.eta_minutes || 10}m)`);
+          showToast(`Assigned ${responder.callsign}${routing?.eta_minutes ? ` · ETA ${routing.eta_minutes} min` : ''}.`);
         } else if (event === 'responder_status_updated') {
           const updatedResp: ResponderUnit = data;
           setResponders((prev) =>
@@ -167,7 +172,7 @@ export const App: React.FC = () => {
     return () => {
       cleanupWs();
     };
-  }, [playAlertSound, selectedIncident]);
+  }, [playAlertSound]);
 
   // Recalculate proximity when selected incident changes
   useEffect(() => {
@@ -176,7 +181,7 @@ export const App: React.FC = () => {
     }
   }, [selectedIncident]);
 
-  const handleUpdateStatus = async (id: string, status: IncidentStatus) => {
+  const handleUpdateStatus = async (id: string, status: IncidentStatus): Promise<boolean> => {
     try {
       const updated = await api.updateStatus(id, status);
       setIncidents((prev) =>
@@ -188,8 +193,11 @@ export const App: React.FC = () => {
       if (status === 'Resolved') {
         setActiveRoutes((prev) => prev.filter((r) => r.incident_id !== id));
       }
+      return true;
     } catch (err) {
       console.error('Error updating status', err);
+      showToast('Could not update the incident. Check the connection and try again.');
+      return false;
     }
   };
 
@@ -207,29 +215,33 @@ export const App: React.FC = () => {
             incident_id: incidentId,
             origin: [unit.coordinates.latitude, unit.coordinates.longitude],
             destination: [inc.coordinates.latitude, inc.coordinates.longitude],
-            distance_km: result.distance_km || 4.2,
-            eta_minutes: result.eta_minutes || 12,
+            distance_km: result.distance_km,
+            eta_minutes: result.eta_minutes,
             unit_callsign: unit.callsign,
           }
         ]);
       }
       loadResponders(selectedIncident?.id);
       loadIncidents();
-      showToast(`⚡ Dispatched ${result.callsign} to crisis zone!`);
+      showToast(`Assigned ${result.callsign} to ${inc?.location_name ?? 'the incident'}.`);
     } catch (err) {
       console.error('Error dispatching responder', err);
+      showToast('Could not assign that unit. Check the connection and try again.');
     }
   };
 
-  const handleUpdateResponderStatus = async (responderId: string, status: string) => {
+  const handleUpdateResponderStatus = async (responderId: string, status: string): Promise<boolean> => {
     try {
       await api.updateResponderStatus(responderId, status);
       loadResponders(selectedIncident?.id);
       if (status === 'Available') {
         setActiveRoutes((prev) => prev.filter((r) => r.responder_id !== responderId));
       }
+      return true;
     } catch (err) {
       console.error('Error updating responder status', err);
+      showToast('Could not update the responder. Check the connection and try again.');
+      return false;
     }
   };
 
@@ -238,7 +250,7 @@ export const App: React.FC = () => {
       const created = await api.reportIncident(report);
       setIncidents((prev) => [created, ...prev.filter((i) => i.id !== created.id)]);
       setSelectedIncident(created);
-      showToast(`Incident ingested: ${created.location_name}`);
+      showToast(`Report received for ${created.location_name}.`);
       return created;
     } catch (err) {
       console.error('Error submitting report', err);
@@ -251,8 +263,8 @@ export const App: React.FC = () => {
   ).length;
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#0B0F17] text-slate-100 overflow-hidden font-sans">
-      {/* Top Telemetry Header */}
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to map and incident ledger</a>
       <Header
         connected={wsConnected}
         lowBandwidth={lowBandwidth}
@@ -268,13 +280,10 @@ export const App: React.FC = () => {
         criticalCount={criticalCount}
       />
 
-      {/* High-Density Statistical Emergency Metric Cards */}
       <StatCards incidents={incidents} />
 
-      {/* Main Split Screen Area: Leaflet Map (Left) + Dispatch Board (Right) */}
-      <main className="flex-1 flex overflow-hidden relative">
-        {/* Left Map Viewport */}
-        <div className="flex-1 h-full relative">
+      <main id="main-content" className="dashboard-main">
+        <section className="map-panel" aria-label="Incident and responder map">
           <DisasterMap
             incidents={incidents}
             selectedIncident={selectedIncident}
@@ -285,27 +294,25 @@ export const App: React.FC = () => {
             activeRoutes={activeRoutes}
             onDispatchResponder={handleDispatchResponder}
           />
-        </div>
+        </section>
 
-        {/* Right Tactical Dispatch Board */}
-        <div className="w-full md:w-[420px] lg:w-[480px] h-full shrink-0 flex flex-col">
+        <div className="dispatch-panel">
           <DispatchBoard
             incidents={incidents}
             selectedIncident={selectedIncident}
             onSelectIncident={setSelectedIncident}
             onUpdateStatus={handleUpdateStatus}
+            onActionMessage={showToast}
           />
         </div>
 
-        {/* Live Notification Toast Banner */}
         {toastMessage && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[3000] px-4 py-2.5 rounded-xl bg-slate-900/95 border border-white/20 text-white text-xs font-semibold shadow-2xl backdrop-blur-md flex items-center space-x-2 animate-in fade-in slide-in-from-top-2">
+          <div className="live-toast" role="status" aria-live="polite" aria-atomic="true">
             <span>{toastMessage}</span>
           </div>
         )}
       </main>
 
-      {/* Bottom Tactical Responder Fleet Matrix */}
       <ResponderFleet
         responders={responders}
         selectedIncident={selectedIncident}
@@ -338,6 +345,7 @@ export const App: React.FC = () => {
       <ResponderPwaModal
         isOpen={isResponderPwaOpen}
         onClose={() => setIsResponderPwaOpen(false)}
+        connected={wsConnected}
         responders={responders}
         incidents={incidents}
         onUpdateResponderStatus={handleUpdateResponderStatus}

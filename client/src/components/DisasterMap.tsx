@@ -69,18 +69,17 @@ const createResponderMarker = (unit: ResponderUnit) => {
     ? '#2dd4bf'
     : '#a855f7';
 
-  const emoji = unit.unit_type === 'Ambulance'
-    ? '🚑'
+  const symbol = unit.unit_type === 'Ambulance'
+    ? 'A'
     : unit.unit_type === 'FireEngine'
-    ? '🚒'
+    ? 'F'
     : unit.unit_type === 'WaterRescue'
-    ? '🚤'
-    : '🚁';
+    ? 'W'
+    : 'R';
 
   const html = `
-    <div style="position: relative; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: #0f172a; border: 2px solid ${color}; border-radius: 50%; box-shadow: 0 0 12px ${color}88;">
-      <span style="font-size: 14px;">${emoji}</span>
-      ${isDispatched ? `<span style="position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%; animation: pulse 1s infinite;"></span>` : ''}
+    <div class="responder-map-marker ${isDispatched ? 'is-dispatched' : ''}" style="--marker-color: ${color}" aria-label="${unit.callsign}">
+      <span>${symbol}</span>
     </div>
   `;
 
@@ -90,6 +89,7 @@ const createResponderMarker = (unit: ResponderUnit) => {
     iconSize: [32, 32],
     iconAnchor: [16, 16],
     popupAnchor: [0, -16],
+    tooltipAnchor: [0, -14],
   });
 };
 
@@ -98,8 +98,8 @@ const createShelterMarker = (shelter: Shelter) => {
   const color = isCrowded ? '#ef4444' : shelter.occupancy_percent > 60 ? '#f59e0b' : '#10b981';
 
   const html = `
-    <div style="position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: #0b111e; border: 2px solid ${color}; border-radius: 8px; box-shadow: 0 0 10px ${color}66;">
-      <span style="font-size: 13px;">🏠</span>
+    <div class="shelter-map-marker" style="--marker-color: ${color}" aria-label="${shelter.name}">
+      <span>S</span>
     </div>
   `;
 
@@ -126,10 +126,10 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
   const defaultPosition: [number, number] = [-1.286389, 36.817223];
 
   // Layer Toggles
-  const [showHeatmap, setShowHeatmap] = useState<boolean>(true);
+  const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
   const [showWeatherRadar, setShowWeatherRadar] = useState<boolean>(true);
   const [showShelters, setShowShelters] = useState<boolean>(true);
-  const [basemapMode, setBasemapMode] = useState<'tactical' | 'satellite' | 'streets'>('tactical');
+  const [basemapMode, setBasemapMode] = useState<'satellite' | 'streets'>('streets');
   
   // Weather & Flood Zones state
   const [floodZones, setFloodZones] = useState<FloodZoneFeature[]>([]);
@@ -183,43 +183,36 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
     <div className="w-full h-full relative overflow-hidden select-none">
       
       {/* Top Map Layer Control Bar */}
-      <div className="absolute top-4 right-4 z-[1000] flex items-center space-x-2 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shadow-2xl">
+      <div className="map-layer-controls absolute top-4 right-4 z-[1000]">
         {/* Basemap Mode Switcher */}
         <button
           type="button"
-          onClick={() => {
-            setBasemapMode(prev => prev === 'tactical' ? 'satellite' : prev === 'satellite' ? 'streets' : 'tactical');
-          }}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/90 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/50 transition"
-          title="Cycle Basemap: Tactical Dark / Satellite Aerial / OpenStreetMap"
+          onClick={() => setBasemapMode((mode) => mode === 'streets' ? 'satellite' : 'streets')}
+          className="map-layer-button is-active"
+          aria-label={`Switch to ${basemapMode === 'streets' ? 'satellite imagery' : 'street map'}`}
+          title={`Switch to ${basemapMode === 'streets' ? 'satellite imagery' : 'street map'}`}
         >
           <Globe className="w-3.5 h-3.5" />
-          <span className="capitalize">{basemapMode === 'tactical' ? 'Tactical Dark' : basemapMode === 'satellite' ? 'Satellite' : 'Street Map'}</span>
+          <span>{basemapMode === 'streets' ? 'Street map' : 'Satellite'}</span>
         </button>
 
         <button
           type="button"
           onClick={() => setShowWeatherRadar(!showWeatherRadar)}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-            showWeatherRadar
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-900/50'
-              : 'bg-slate-800 text-slate-400 hover:text-white'
-          }`}
-          title="Toggle Flood Inundation Zones & Weather Radar HUD"
+          className={`map-layer-button ${showWeatherRadar ? 'is-active' : ''}`}
+          aria-pressed={showWeatherRadar}
+          title="Show flood zones and weather data"
         >
           <CloudRain className="w-3.5 h-3.5" />
-          <span>Flood Radar</span>
+          <span>Flood zones</span>
         </button>
 
         <button
           type="button"
           onClick={() => setShowShelters(!showShelters)}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-            showShelters
-              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/50'
-              : 'bg-slate-800 text-slate-400 hover:text-white'
-          }`}
-          title="Toggle Designated Evacuation Shelters & Relief Bases"
+          className={`map-layer-button ${showShelters ? 'is-active' : ''}`}
+          aria-pressed={showShelters}
+          title="Show evacuation shelters"
         >
           <Home className="w-3.5 h-3.5" />
           <span>Shelters</span>
@@ -228,45 +221,30 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
         <button
           type="button"
           onClick={() => setShowHeatmap(!showHeatmap)}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-            showHeatmap
-              ? 'bg-amber-600 text-white shadow-md shadow-amber-900/50'
-              : 'bg-slate-800 text-slate-400 hover:text-white'
-          }`}
-          title="Toggle Spatial Incident Heatmap Gradient"
+          className={`map-layer-button ${showHeatmap ? 'is-active' : ''}`}
+          aria-pressed={showHeatmap}
+          title="Show incident density"
         >
           <Flame className="w-3.5 h-3.5" />
-          <span>Heatmap</span>
+          <span>Density</span>
         </button>
       </div>
 
       {/* Weather Early-Warning Telemetry HUD Card (Top-Left) */}
       {showWeatherRadar && weatherTelemetry && (
-        <div className="absolute top-4 left-4 z-[1000] max-w-sm bg-slate-900/95 backdrop-blur-md border border-blue-500/30 rounded-xl p-3.5 shadow-2xl text-xs space-y-2 text-slate-100">
-          <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
-            <span className="font-bold text-sky-400 flex items-center gap-1.5">
-              <CloudRain className="w-4 h-4 text-sky-400" />
-              LIVE RADAR TELEMETRY
-            </span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-950 text-red-300 border border-red-500/40 font-mono font-bold animate-pulse">
-              LEVEL 3 ALERT
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-            <div className="p-1.5 rounded bg-slate-800/80 border border-white/10">
-              <span className="text-slate-400 block text-[10px]">RAINFALL RATE</span>
-              <span className="text-sky-300 font-bold">{weatherTelemetry.precipitation_rate_mmh} mm/hr</span>
+        <div className="map-radar-card absolute top-4 left-4 z-[1000]">
+          <h3>Rain &amp; flood data</h3>
+          <div className="grid grid-cols-2 gap-2 mt-2 text-[11px]">
+            <div>
+              <span className="block text-slate-500 text-[10px]">Rainfall</span>
+              <strong>{weatherTelemetry.precipitation_rate_mmh} mm/hr</strong>
             </div>
-            <div className="p-1.5 rounded bg-slate-800/80 border border-white/10">
-              <span className="text-slate-400 block text-[10px]">RIVER GAUGE</span>
-              <span className="text-amber-300 font-bold">{weatherTelemetry.river_gauge_elevation_m}m (+{weatherTelemetry.river_delta_above_flood_stage_m}m)</span>
+            <div>
+              <span className="block text-slate-500 text-[10px]">River level</span>
+              <strong>{weatherTelemetry.river_gauge_elevation_m} m</strong>
             </div>
           </div>
-
-          <p className="text-[10px] text-slate-300 italic leading-snug">
-            {weatherTelemetry.warning_bulletin}
-          </p>
+          <p>{weatherTelemetry.warning_bulletin}</p>
         </div>
       )}
 
@@ -278,7 +256,6 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
       >
         <MapController selectedIncident={selectedIncident} />
 
-        {/* Clean, High-Precision Tile Layer without Watermarks */}
         <TileLayer
           key={basemapMode}
           attribution={
@@ -291,8 +268,11 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
               ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
               : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
           }
-          className={basemapMode === 'tactical' ? 'dark-map-tiles' : ''}
+          className=""
           maxZoom={19}
+          updateWhenIdle={lowBandwidth}
+          updateWhenZooming={!lowBandwidth}
+          keepBuffer={lowBandwidth ? 1 : 2}
         />
 
         {/* High-Hazard Flood Vulnerability Polygons */}
@@ -365,8 +345,8 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
             }}
           >
             <Tooltip permanent={false} direction="top" offset={[0, -10]}>
-              <div className="text-xs font-mono font-semibold text-sky-400 bg-slate-900 px-1 py-0.5 rounded">
-                ⚡ {route.unit_callsign}: {route.distance_km} km (ETA {route.eta_minutes} min)
+              <div className="text-xs font-semibold text-sky-400 bg-slate-900 px-1 py-0.5 rounded">
+                {route.unit_callsign}: {route.distance_km} km · {route.eta_minutes} min
               </div>
             </Tooltip>
           </Polyline>
@@ -408,10 +388,10 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
                   {/* Location & Raw Text */}
                   <div>
                     <h4 className="font-semibold text-xs text-white flex items-center gap-1">
-                      📍 {incident.location_name}
+                      {incident.location_name}
                     </h4>
                     <p className="text-xs text-slate-300 mt-1 line-clamp-3 leading-relaxed">
-                      "{incident.raw_text}"
+                      “{incident.raw_text}”
                     </p>
                     <p className="text-[10px] text-slate-400 mt-1 font-mono">
                       EPSG:4326: [{incident.coordinates.latitude.toFixed(4)}, {incident.coordinates.longitude.toFixed(4)}]
@@ -503,7 +483,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
               <div className="p-1 space-y-1 text-slate-100 max-w-xs text-xs">
                 <div className="flex items-center gap-1.5 font-bold text-red-400 border-b border-white/10 pb-1">
                   <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
-                  DYNAMIC HAZARD CORDON ({hazardPerimeter.properties.radius_meters}m)
+                  Hazard perimeter · {hazardPerimeter.properties.radius_meters} m
                 </div>
                 <p className="text-[11px] text-slate-200">
                   {hazardPerimeter.properties.evacuation_advisory}
@@ -534,7 +514,7 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-300 font-mono">
-                    📍 {s.location_name}
+                    {s.location_name}
                   </p>
                   <div className="text-[11px] space-y-0.5 text-slate-400">
                     <div>Capacity: <strong className="text-white">{s.occupancy_current} / {s.capacity_total}</strong></div>
@@ -549,34 +529,30 @@ export const DisasterMap: React.FC<DisasterMapProps> = ({
       </MapContainer>
 
       {/* Floating Map Legend Overlay */}
-      <div className="absolute bottom-4 left-4 z-[1000] bg-[#111827]/90 backdrop-blur-md border border-white/10 rounded-xl p-3 shadow-2xl text-xs space-y-2 pointer-events-auto max-w-[240px]">
-        <h5 className="font-semibold text-slate-200 tracking-wider text-[11px] uppercase border-b border-white/10 pb-1">
-          Tactical Map Legend
-        </h5>
-        <div className="space-y-1.5">
-          <div className="flex items-center space-x-2">
-            <span className="w-3 h-3 rounded-full bg-red-500 shadow-sm shadow-red-500 animate-pulse"></span>
-            <span className="text-slate-300 text-[11px]">Critical (Rescue trapped)</span>
+      <div className="map-legend absolute bottom-4 left-4 z-[1000] pointer-events-auto">
+        <h3>
+          Map key
+        </h3>
+        <div>
+          <div className="map-legend-row">
+            <span className="map-legend-symbol critical" aria-hidden="true" />
+            <span>Critical incident</span>
           </div>
-          <div className="flex items-center space-x-2">
-            <span className="w-3 h-3 rounded-full bg-amber-500"></span>
-            <span className="text-slate-300 text-[11px]">Medium (Escalating risk)</span>
+          <div className="map-legend-row">
+            <span className="map-legend-symbol medium" aria-hidden="true" />
+            <span>Medium urgency</span>
           </div>
-          <div className="flex items-center space-x-2">
-            <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
-            <span className="text-slate-300 text-[11px]">Low (Advisory/Monitored)</span>
+          <div className="map-legend-row">
+            <span className="map-legend-symbol low" aria-hidden="true" />
+            <span>Low urgency</span>
           </div>
-          <div className="flex items-center space-x-2">
-            <span className="w-3.5 h-2 rounded border border-dashed border-red-500 bg-red-500/20"></span>
-            <span className="text-red-300 text-[11px]">Hazard Cordon & Flood Plain</span>
+          <div className="map-legend-row">
+            <span className="map-legend-symbol unit" aria-hidden="true" />
+            <span>Responder unit</span>
           </div>
-          <div className="flex items-center space-x-2">
-            <span className="text-[12px]">🏠</span>
-            <span className="text-emerald-300 text-[11px]">Evacuation Shelters</span>
-          </div>
-          <div className="pt-1 border-t border-white/10 flex items-center space-x-2">
-            <span className="text-[12px]">🚑 🚒 🚤</span>
-            <span className="text-sky-300 text-[11px]">Active Responders & Routes</span>
+          <div className="map-legend-row">
+            <span className="map-legend-symbol shelter" aria-hidden="true" />
+            <span>Evacuation shelter</span>
           </div>
         </div>
       </div>

@@ -1,18 +1,24 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ef4444'><path d='M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z'/></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>u-SHA-jua | Geospatial Disaster Informatics & Crisis Command</title>
-    <!-- Google Fonts Inter & JetBrains Mono -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <meta name="theme-color" content="#edf1ed" />
+    <meta name="description" content="A shared map and incident queue for coordinating emergency response." />
+    <title>u-SHA-jua — Emergency response map</title>
+    <!--
+      THESIS: A working relief atlas replaces the generic dark command dashboard.
+      OWN-WORLD: Cool map paper, survey-green ink, crisp dividers, and restrained rescue red.
+      STORY: Read the response picture, select an incident, then coordinate the next action.
+      FIRST VIEWPORT: Map and incident ledger share the main field; a compact response
+        summary sits above them and available units remain visible below on desktop.
+      FORM: An operations map paired with a field ledger, adapted from the existing
+        map-and-queue surface so the real dispatch workflow stays immediate.
+    -->
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   </head>
-  <body class="bg-[#0B0F17] text-slate-100 antialiased overflow-hidden min-h-screen">
+  <body class="antialiased min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
