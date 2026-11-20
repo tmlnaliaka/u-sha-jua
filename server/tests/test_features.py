@@ -135,6 +135,9 @@ def test_incident_attachments_upload(tmp_path):
     assert res_detail.status_code == 200
     assert len(res_detail.json()["attachments"]) == 2
 
+    # Clean up test incident and its uploaded files on disk
+    client.delete(f"/api/v1/incidents/{inc_id}", headers={"X-API-Key": "ushajua-dev-dispatcher-key"})
+
 
 def test_responder_checklist_persistence():
     """Validates that field responder mission checklist updates persist in the database."""
