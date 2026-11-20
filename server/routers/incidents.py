@@ -32,6 +32,7 @@ from services.security import (
     sanitize_input
 )
 from services.audit_service import audit_service
+from services.storage_service import storage_service
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
@@ -730,10 +731,7 @@ async def upload_incident_attachments(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    import json, os, shutil
-    base_upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", incident_id)
-    os.makedirs(base_upload_dir, exist_ok=True)
-
+    import json
     existing = []
     if incident.attachments:
         try:
@@ -743,19 +741,13 @@ async def upload_incident_attachments(
 
     new_attachments = []
     for f in files:
-        safe_name = os.path.basename(f.filename) if f.filename else f"attachment_{uuid.uuid4().hex[:8]}"
-        dest_path = os.path.join(base_upload_dir, safe_name)
-        with open(dest_path, "wb") as buffer:
-            shutil.copyfileobj(f.file, buffer)
-
-        size_bytes = os.path.getsize(dest_path)
-        attachment_record = {
-            "filename": safe_name,
-            "url": f"/uploads/{incident_id}/{safe_name}",
-            "content_type": f.content_type or "application/octet-stream",
-            "size_bytes": size_bytes,
-            "uploaded_at": datetime.now(timezone.utc).isoformat()
-        }
+        safe_name = f.filename if f.filename else f"attachment_{uuid.uuid4().hex[:8]}"
+        attachment_record = storage_service.save_file(
+            incident_id=incident_id,
+            filename=safe_name,
+            file_obj=f.file,
+            content_type=f.content_type or "application/octet-stream"
+        )
         new_attachments.append(attachment_record)
         existing.append(attachment_record)
 
@@ -798,14 +790,8 @@ async def delete_incident(
         db.add(unit)
         await ws_manager.broadcast("responder_status_updated", unit.to_dict())
 
-    # Clean up attachment files on disk if any exist
-    import os, shutil
-    base_upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", incident_id)
-    if os.path.exists(base_upload_dir):
-        try:
-            shutil.rmtree(base_upload_dir, ignore_errors=True)
-        except Exception:
-            pass
+    # Clean up attachment files via storage_service (Local or S3 provider)
+    storage_service.delete_incident_files(incident_id)
 
     db.delete(incident)
     db.commit()
