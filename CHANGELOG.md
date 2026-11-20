@@ -2,6 +2,18 @@
 
 All notable changes to the **u-SHA-jua** platform are documented in this file.
 
+## [1.4.1-enterprise] - 2026-11-20
+### Added
+- **Kenya-Only Mapbox Navigation Basemaps (`client/src/components/DisasterMap.tsx`)**: Integrated `navigation-night-v1`, `navigation-day-v1`, and `satellite-streets-v12` strictly locked to Kenya territorial bounds (`[[-5.5, 33.0], [5.8, 42.5]]`) with 6 automated boundary tests (`server/tests/test_kenya_jurisdiction.py`).
+- **Multi-Worker Shared State Adapter (`server/services/cache_service.py`)**: Hybrid Redis/in-memory cache backing JWT revocation, sliding-window rate limits, and shared telemetry counters.
+- **Background Periodic Maintenance Scheduler (`server/main.py`)**: FastAPI lifespan task for hourly stale bucket/JWT revocation cleanup and daily SHA-256 snapshot backups, plus `POST /api/v1/admin/maintenance/run`.
+- **Reversible Schema Migrations (`server/migrations/runner.py`)**: Added `down()` handlers, `rollback_migration()`, and admin-only `POST /api/v1/admin/migrations/rollback`.
+- **Cloud Object Storage Abstraction (`server/services/storage_service.py`)**: Pluggable `LocalStorageProvider` and `S3StorageProvider` controlled via `STORAGE_BACKEND`.
+
+### Changed & Cleaned
+- Pruned unused `shapely` dependency and declared direct JWT/bcrypt dependencies (`python-jose`, `passlib`, `bcrypt`) in `server/requirements.txt`.
+- Removed 15 obsolete phase E2E audit scripts (`client/e2e/`), untracked local AI/planning files, and added test teardown cleanup for zero residual disk bloat (`109/109` pytest passing).
+
 ## [1.4.0-enterprise] - 2026-11-03
 ### Added
 - **Durable Database-Backed SHA-256 Audit Ledger (`server/models/audit.py`)**: Persists cryptographic hash-chained operational blocks in SQLite/PostGIS (`audit_blocks` table) so audit trails survive server restarts.
