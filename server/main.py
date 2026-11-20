@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 import time
 from sqlalchemy import text
-from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -27,8 +27,14 @@ from routers.shelters import seed_shelters
 from services.spatial_index import spatial_grid, spatial_cache
 from services.websocket_manager import ws_manager
 from services.audit_service import audit_service
-from services.security import rate_limiter
+from services.security import rate_limiter, verify_api_key, ROLE_ADMIN
 from services.telemetry import telemetry_collector
+from services.auth_service import auth_service
+from services.backup_service import backup_service
+from services.cache_service import cache_service
+from services.storage_service import storage_service
+import asyncio
+import json
 import uuid
 import os
 from datetime import datetime, timezone
@@ -113,6 +119,76 @@ def seed_initial_incidents():
     finally:
         db.close()
 
+MAINTENANCE_STATE = {
+    "scheduler_running": False,
+    "cycles_completed": 0,
+    "last_hourly_cleanup_at": None,
+    "last_daily_backup_at": None,
+    "last_backup_path": None
+}
+
+
+def run_periodic_maintenance_cycle(perform_backup: bool = False) -> dict:
+    """
+    Executes a background maintenance cycle (Sprint 3 - E54 resolution):
+    1. Purges expired rate-limit sliding-window buckets.
+    2. Purges expired JWT token revocations from memory and hybrid cache.
+    3. Optionally triggers an automatic SHA-256 snapshot backup to `server/backups/auto_snapshot_{date}.json`.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    purged_rl = rate_limiter.purge_stale_records(window_seconds=60.0)
+    purged_jwt = auth_service.purge_expired_revocations()
+
+    backup_file = None
+    if perform_backup:
+        db = SessionLocal()
+        try:
+            snap = backup_service.export_snapshot(db, engine)
+            backups_dir = os.path.join(os.path.dirname(__file__), "backups")
+            os.makedirs(backups_dir, exist_ok=True)
+            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            backup_file = os.path.join(backups_dir, f"auto_snapshot_{date_str}.json")
+            with open(backup_file, "w", encoding="utf-8") as f:
+                json.dump(snap, f, indent=2)
+            MAINTENANCE_STATE["last_daily_backup_at"] = now_iso
+            MAINTENANCE_STATE["last_backup_path"] = backup_file
+        finally:
+            db.close()
+
+    MAINTENANCE_STATE["cycles_completed"] = int(MAINTENANCE_STATE.get("cycles_completed", 0)) + 1
+    MAINTENANCE_STATE["last_hourly_cleanup_at"] = now_iso
+
+    return {
+        "status": "completed",
+        "executed_at": now_iso,
+        "purged_rate_limit_buckets": purged_rl,
+        "purged_jwt_revocations": purged_jwt,
+        "backup_file": backup_file,
+        "cycles_completed": MAINTENANCE_STATE["cycles_completed"]
+    }
+
+
+async def _periodic_maintenance_loop():
+    """
+    Asynchronous background daemon launched by FastAPI lifespan (Sprint 3):
+    - Runs initial cleanup on startup.
+    - Every 1 hour (3600s): purges stale rate-limit tracking and expired JWT revocations.
+    - Every 24 hours (24 cycles): writes automatic SHA-256 disaster snapshot to disk.
+    """
+    MAINTENANCE_STATE["scheduler_running"] = True
+    hour_counter = 0
+    try:
+        run_periodic_maintenance_cycle(perform_backup=False)
+        while True:
+            await asyncio.sleep(3600)
+            hour_counter += 1
+            should_backup = (hour_counter % 24 == 0)
+            run_periodic_maintenance_cycle(perform_backup=should_backup)
+    except asyncio.CancelledError:
+        MAINTENANCE_STATE["scheduler_running"] = False
+        raise
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize DB tables & run migrations
@@ -129,8 +205,17 @@ async def lifespan(app: FastAPI):
             spatial_grid.add_or_update(inc.to_dict())
     finally:
         db.close()
-        
-    yield
+
+    # Launch background periodic maintenance scheduler (Sprint 3 - E54)
+    maintenance_task = asyncio.create_task(_periodic_maintenance_loop())
+    try:
+        yield
+    finally:
+        maintenance_task.cancel()
+        try:
+            await maintenance_task
+        except asyncio.CancelledError:
+            pass
 
 OPENAPI_TAGS = [
     {
@@ -379,8 +464,20 @@ def health_check():
         "audit_chain_verified": integrity.get("valid", False),
         "spatial_grid_items": spatial_grid.size(),
         "active_ws_connections": ws_manager.active_count,
+        "cache_backend": cache_service.backend_mode,
+        "storage_backend": storage_service.provider_name,
+        "maintenance_scheduler": MAINTENANCE_STATE,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+
+@app.post("/api/v1/admin/maintenance/run", tags=["Database Migrations & Disaster Backup"])
+def trigger_maintenance_cycle(
+    perform_backup: bool = False,
+    role: str = Depends(verify_api_key([ROLE_ADMIN]))
+):
+    """Triggers an immediate maintenance cleanup & optional automatic snapshot backup cycle (Admin only)."""
+    return run_periodic_maintenance_cycle(perform_backup=perform_backup)
 
 @app.get("/healthz", tags=["Health"])
 def liveness_probe():
