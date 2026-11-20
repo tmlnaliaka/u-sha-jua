@@ -8,6 +8,7 @@ from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 from database import get_db
 from config import settings
+from services.cache_service import cache_service
 
 # API Key headers
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -37,6 +38,10 @@ class InMemoryRateLimiter:
         self._cleanup_counter = 0
 
     def is_allowed(self, client_id: str, max_requests: int = 60, window_seconds: float = 60.0) -> Tuple[bool, int, float]:
+        # If Redis shared cache is active, delegate to Redis sorted-set sliding window for multi-worker parity
+        if cache_service.backend_mode == "redis":
+            return cache_service.sliding_window_allow(client_id, max_requests, window_seconds)
+
         now = time.time()
         cutoff = now - window_seconds
 
@@ -62,10 +67,18 @@ class InMemoryRateLimiter:
 
     def reset(self, client_id: Optional[str] = None):
         """Resets rate limit records (useful for test fixtures)."""
+        cache_service.reset_sliding_window(client_id)
         if client_id:
             self._requests.pop(client_id, None)
         else:
             self._requests.clear()
+
+    def purge_stale_records(self, window_seconds: float = 60.0) -> int:
+        """Purges expired rate-limit tracking entries and returns count of purged IP buckets."""
+        cutoff = time.time() - window_seconds
+        before = len(self._requests)
+        self._purge_stale(cutoff)
+        return max(0, before - len(self._requests))
 
     def _purge_stale(self, cutoff: float):
         keys_to_remove = [k for k, v in self._requests.items() if not v or v[-1] <= cutoff]
