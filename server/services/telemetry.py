@@ -8,6 +8,7 @@ from typing import Dict, List, Any, Optional
 from services.spatial_index import spatial_grid, spatial_cache
 from services.websocket_manager import ws_manager
 from services.audit_service import audit_service
+from services.cache_service import cache_service
 
 logger = logging.getLogger("ushajua.telemetry")
 
@@ -40,12 +41,16 @@ class TelemetryCollector:
         client_ip: str = "127.0.0.1"
     ) -> Dict[str, Any]:
         self.total_requests += 1
+        cache_service.hincrby("telemetry:counters", "total_requests", 1)
         if status_code == 429:
             self.rate_limited_429 += 1
+            cache_service.hincrby("telemetry:counters", "rate_limited_429", 1)
         if 400 <= status_code < 500:
             self.total_errors_4xx += 1
+            cache_service.hincrby("telemetry:counters", "total_errors_4xx", 1)
         elif status_code >= 500:
             self.total_errors_5xx += 1
+            cache_service.hincrby("telemetry:counters", "total_errors_5xx", 1)
 
         self._latencies.append(round(duration_ms, 3))
         route_key = f"{method} {path}"
