@@ -6,6 +6,7 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
 from config import settings
+from services.cache_service import cache_service
 
 # Password hashing configuration
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -16,7 +17,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-# In-memory revocation cache for instant logouts (jti / token hash -> expiry timestamp)
+# In-memory revocation mirror for backward-compatibility alongside shared cache_service (Redis / hybrid)
 _revoked_tokens: Dict[str, float] = {}
 
 class AuthService:
@@ -82,23 +83,42 @@ class AuthService:
 
     @staticmethod
     def revoke_token(token: str):
-        """Revokes a JWT token so it cannot be used again before natural expiry."""
+        """Revokes a JWT token in shared cache_service (Redis/Hybrid) so it is rejected across all workers."""
+        now = time.time()
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
             jti = payload.get("jti") or token
-            exp = payload.get("exp", time.time() + 3600)
-            _revoked_tokens[jti] = float(exp)
+            exp = float(payload.get("exp", now + 3600))
+            ttl = max(1.0, exp - now)
+            _revoked_tokens[jti] = exp
+            cache_service.set(f"revoked:{jti}", "1", ttl_seconds=ttl)
         except Exception:
-            _revoked_tokens[token] = time.time() + 3600
+            exp = now + 3600
+            _revoked_tokens[token] = exp
+            cache_service.set(f"revoked:{token}", "1", ttl_seconds=3600.0)
 
         # Purge expired entries
+        AuthService.purge_expired_revocations()
+
+    @staticmethod
+    def purge_expired_revocations() -> int:
+        """Purges expired JWT revocation records from local memory and hybrid cache."""
         now = time.time()
         expired_keys = [k for k, v in _revoked_tokens.items() if v < now]
         for k in expired_keys:
             del _revoked_tokens[k]
+        cache_removed = cache_service.purge_expired_kv()
+        return len(expired_keys) + cache_removed
 
     @staticmethod
     def is_token_revoked(jti_or_token: str) -> bool:
-        return jti_or_token in _revoked_tokens
+        if cache_service.exists(f"revoked:{jti_or_token}"):
+            return True
+        exp = _revoked_tokens.get(jti_or_token)
+        if exp is not None:
+            if exp >= time.time():
+                return True
+            del _revoked_tokens[jti_or_token]
+        return False
 
 auth_service = AuthService()
