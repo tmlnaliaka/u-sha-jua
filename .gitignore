@@ -1,4 +1,4 @@
-# Python
+# Python & FastAPI
 __pycache__/
 *.py[cod]
 *$py.class
@@ -25,12 +25,14 @@ wheels/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Databases
 *.db
 *.db-shm
 *.db-wal
 *.sqlite3
 
-# Node / React
+# Node / React / Vite
 node_modules/
 client/node_modules/
 npm-debug.log*
@@ -38,6 +40,8 @@ yarn-debug.log*
 yarn-error.log*
 client/dist/
 *.timestamp-*.mjs
+
+# Environment & Secrets (Never commit)
 .env
 .env.*
 **/.env
@@ -58,3 +62,5 @@ Thumbs.db
 # Runtime uploads & media
 server/uploads/*
 !server/uploads/.gitkeep
+server/backups/*
+!server/backups/.gitkeep
