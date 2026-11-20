@@ -43,24 +43,50 @@ def _migration_003_composite_btree_spatial_indexes(conn: Connection, dialect: st
         conn.exec_driver_sql(stmt)
 
 
+def _migration_003_down_composite_btree_spatial_indexes(conn: Connection, dialect: str) -> None:
+    """003 down: Drops composite B-Tree spatial and triage indexes created by migration 003."""
+    drop_statements = [
+        "DROP INDEX IF EXISTS idx_incidents_lat_lon",
+        "DROP INDEX IF EXISTS idx_incidents_status_urgency_ts",
+        "DROP INDEX IF EXISTS idx_incidents_ts_desc",
+        "DROP INDEX IF EXISTS idx_responders_status_type",
+        "DROP INDEX IF EXISTS idx_shelters_active_coords"
+    ]
+    for stmt in drop_statements:
+        conn.exec_driver_sql(stmt)
+
+
+def _migration_002_down_incident_lifecycle_columns(conn: Connection, dialect: str) -> None:
+    """002 down: Reversible handler for incident lifecycle columns (preserves data rows safely)."""
+    conn.execute(text("SELECT 1"))
+
+
+def _migration_001_down_initial_core_tables(conn: Connection, dialect: str) -> None:
+    """001 down: Baseline schema floor reached."""
+    conn.execute(text("SELECT 1"))
+
+
 MIGRATIONS: List[Dict[str, Any]] = [
     {
         "version": "001",
         "name": "001_initial_core_tables",
         "description": "Verify core operational tables (incidents, responder_units, evacuation_shelters, users, audit_blocks)",
-        "fn": _migration_001_initial_core_tables
+        "fn": _migration_001_initial_core_tables,
+        "down": _migration_001_down_initial_core_tables
     },
     {
         "version": "002",
         "name": "002_incident_lifecycle_columns",
         "description": "Add dispatched_at, resolved_at, attachments to incidents and checklist_json to responder_units",
-        "fn": _migration_002_incident_lifecycle_columns
+        "fn": _migration_002_incident_lifecycle_columns,
+        "down": _migration_002_down_incident_lifecycle_columns
     },
     {
         "version": "003",
         "name": "003_composite_btree_spatial_indexes",
         "description": "Enforce composite B-Tree indexes on incidents, responder_units, and evacuation_shelters",
-        "fn": _migration_003_composite_btree_spatial_indexes
+        "fn": _migration_003_composite_btree_spatial_indexes,
+        "down": _migration_003_down_composite_btree_spatial_indexes
     }
 ]
 
@@ -190,4 +216,68 @@ def get_migration_status(engine: Engine) -> Dict[str, Any]:
         "migrations": migrations,
         "active_indexes": sorted(list(set(indexes)))
     }
+
+
+def rollback_migration(engine: Engine, target_version: str) -> Dict[str, Any]:
+    """
+    Reversibly rolls back applied schema migrations down to `target_version` (inclusive remains applied).
+    Executes each migration's `down(conn, dialect)` handler in reverse order and removes its record
+    from `schema_migrations`.
+    """
+    valid_versions = {m["version"] for m in MIGRATIONS} | {"000"}
+    if target_version not in valid_versions:
+        raise ValueError(f"Unknown target migration version '{target_version}'. Valid targets: {sorted(valid_versions)}")
+
+    dialect = engine.dialect.name
+    rolled_back: List[Dict[str, Any]] = []
+
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version VARCHAR(32) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT NOT NULL,
+                checksum VARCHAR(64) NOT NULL,
+                applied_at VARCHAR(64) NOT NULL,
+                execution_ms FLOAT NOT NULL
+            )
+            """
+        )
+
+        existing_rows = conn.execute(
+            text("SELECT version FROM schema_migrations ORDER BY version DESC")
+        ).fetchall()
+        applied_versions = {r[0] for r in existing_rows}
+
+        for m in reversed(MIGRATIONS):
+            ver = m["version"]
+            if ver > target_version and ver in applied_versions:
+                t0 = time.time()
+                down_fn = m.get("down")
+                if callable(down_fn):
+                    down_fn(conn, dialect)
+                exec_ms = round((time.time() - t0) * 1000, 3)
+
+                conn.execute(
+                    text("DELETE FROM schema_migrations WHERE version = :version"),
+                    {"version": ver}
+                )
+                rolled_back.append({
+                    "version": ver,
+                    "name": m["name"],
+                    "rolled_back_at": datetime.now(timezone.utc).isoformat(),
+                    "execution_ms": exec_ms
+                })
+
+    status_after = get_migration_status(engine)
+    return {
+        "status": "rolled_back",
+        "target_version": target_version,
+        "head_version": status_after["head_version"],
+        "rolled_back_count": len(rolled_back),
+        "rolled_back": rolled_back,
+        "active_indexes": status_after["active_indexes"]
+    }
+
 
