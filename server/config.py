@@ -21,6 +21,13 @@ class Settings(BaseModel):
     RESPONDER_API_KEY: str = os.getenv("RESPONDER_API_KEY", "ushajua-dev-responder-key")
     ADMIN_API_KEY: str = os.getenv("ADMIN_API_KEY", "ushajua-dev-admin-key")
     SMS_WEBHOOK_SECRET: str = os.getenv("SMS_WEBHOOK_SECRET", "")
+    REDIS_URL: str = os.getenv("REDIS_URL", "")
+    STORAGE_BACKEND: str = os.getenv("STORAGE_BACKEND", "local")
+    AWS_S3_BUCKET: str = os.getenv("AWS_S3_BUCKET", "ushajua-disaster-media")
+    AWS_S3_ENDPOINT_URL: str = os.getenv("AWS_S3_ENDPOINT_URL", "")
+    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    AWS_S3_REGION: str = os.getenv("AWS_S3_REGION", "af-south-1")
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
