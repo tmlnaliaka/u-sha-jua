@@ -1,17 +1,23 @@
 import os
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from database import get_db, engine
-from migrations.runner import run_migrations, get_migration_status
+from migrations.runner import run_migrations, get_migration_status, rollback_migration
 from services.backup_service import backup_service
 from services.audit_service import audit_service
 from services.telemetry import telemetry_collector
 from services.spatial_index import spatial_grid, spatial_cache
+from services.security import verify_api_key, ROLE_ADMIN
 
 router = APIRouter(prefix="/admin", tags=["Database Migrations & Disaster Backup"])
+
+
+class MigrationRollbackRequest(BaseModel):
+    target_version: str = "002"
 
 
 @router.get("/migrations")
@@ -37,6 +43,34 @@ def trigger_schema_migrations() -> Dict[str, Any]:
         "migrations": applied,
         "active_indexes": status_info["active_indexes"]
     }
+
+
+@router.post("/migrations/rollback")
+def trigger_schema_rollback(
+    payload: MigrationRollbackRequest,
+    role: str = Depends(verify_api_key([ROLE_ADMIN]))
+) -> Dict[str, Any]:
+    """
+    Reversibly rolls back database schema migrations down to `target_version` (Admin only).
+    Logs rollback operation into the cryptographic audit ledger.
+    """
+    try:
+        result = rollback_migration(engine, payload.target_version)
+        audit_service.log_event(
+            action="SCHEMA_MIGRATION_ROLLBACK",
+            actor=role,
+            details={
+                "target_version": payload.target_version,
+                "new_head_version": result["head_version"],
+                "rolled_back_count": result["rolled_back_count"]
+            }
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc)
+        )
 
 
 @router.get("/backup/snapshot")
