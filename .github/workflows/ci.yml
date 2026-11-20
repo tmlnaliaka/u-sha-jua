@@ -36,7 +36,7 @@ jobs:
         run: |
           python -c "from database import engine, init_db; from migrations.runner import get_migration_status; init_db(); st = get_migration_status(engine); assert st['head_version'] == '003', st; print('Verified Head Migration:', st['head_version'])"
 
-      - name: Run Full Automated Pytest Suite (90 Tests)
+      - name: Run Full Automated Pytest Suite (109 Tests)
         run: pytest -v
 
   frontend-verify:
